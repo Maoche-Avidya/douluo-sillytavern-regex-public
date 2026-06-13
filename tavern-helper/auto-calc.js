@@ -17,6 +17,8 @@
         debug: false,
         autoIntervalMs: 30000,
         refreshAfterWrite: true,
+        writeVerifyTimeoutMs: 1500,
+        writeVerifyIntervalMs: 120,
         defaults: {
             baseAttr: 1,
             lifeCoef: 1,
@@ -49,6 +51,7 @@
             npcs: '重要NPC档案表',
             npcAbility: 'NPC能力档案表',
             combatState: '战斗与控制状态表',
+            backpack: '背包物品表',
             taskClues: '任务与线索追踪表',
             locationFactions: '地点与势力关系表',
         },
@@ -420,6 +423,22 @@
                 .map(field => `${CONFIG.tables.player}.${field}`));
         }
         return issues;
+    }
+
+    async function waitForDerivedWriteVisibility(fallbackDb, expectPlayer) {
+        function readDb() {
+            return api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : fallbackDb;
+        }
+
+        let missing = verifyDerivedWrite(readDb() || fallbackDb, expectPlayer);
+        if (!missing.length || !api || typeof api.exportTableAsJson !== 'function') return missing;
+
+        const deadline = Date.now() + CONFIG.writeVerifyTimeoutMs;
+        while (missing.length && Date.now() < deadline) {
+            await sleep(CONFIG.writeVerifyIntervalMs);
+            missing = verifyDerivedWrite(readDb() || fallbackDb, expectPlayer);
+        }
+        return missing;
     }
 
     function qualityInfo(value) {
@@ -1308,6 +1327,65 @@
             if (!update || !update.table || !update.rowIndex || !update.data) continue;
             const result = await updateRowCompat(update.table, update.rowIndex, update.data, options);
             if (apiWriteFailed(result)) failed.push(`${update.table}:updateRow failed`);
+        }
+        return failed;
+    }
+
+    function normalizedUniqueKey(value) {
+        return asText(value).replace(/\s+/g, ' ').toLowerCase();
+    }
+
+    function strictNumeric(value) {
+        const text = asText(value);
+        return /^-?\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN;
+    }
+
+    function mergeDuplicateQuantity(values) {
+        const texts = values.map(asText).filter(Boolean);
+        if (!texts.length) return '';
+        if (new Set(texts).size === 1) return texts[0];
+        const nums = texts.map(strictNumeric);
+        if (nums.every(Number.isFinite)) {
+            const total = nums.reduce((sum, value) => sum + value, 0);
+            return Number.isInteger(total) ? String(total) : String(round(total));
+        }
+        return texts[0];
+    }
+
+    function longestText(values) {
+        return values.map(asText).filter(Boolean).sort((a, b) => b.length - a.length)[0] || '';
+    }
+
+    async function repairDuplicateBackpackRows(db, options = {}) {
+        const groups = new Map();
+        for (const row of rows(db, CONFIG.tables.backpack)) {
+            const key = normalizedUniqueKey(cell(row, '物品名称'));
+            if (!key) continue;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(row);
+        }
+
+        const failed = [];
+        const duplicateRows = [];
+        for (const group of groups.values()) {
+            if (group.length <= 1) continue;
+            group.sort((a, b) => a.__rowIndex - b.__rowIndex);
+            const keeper = group[0];
+            const merged = {
+                '数量': mergeDuplicateQuantity(group.map(row => cell(row, '数量'))),
+                '描述/效果': longestText(group.map(row => cell(row, '描述/效果'))),
+                '类别': longestText(group.map(row => cell(row, '类别'))),
+            };
+            const changed = Object.entries(merged).some(([field, value]) => asText(cell(keeper, field)) !== asText(value));
+            if (changed) {
+                const result = await updateRowCompat(CONFIG.tables.backpack, keeper.__rowIndex, merged, options);
+                if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe update failed`);
+            }
+            duplicateRows.push(...group.slice(1));
+        }
+        for (const row of duplicateRows.sort((a, b) => b.__rowIndex - a.__rowIndex)) {
+            const result = await deleteRowCompat(CONFIG.tables.backpack, row.__rowIndex, options);
+            if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe delete failed`);
         }
         return failed;
     }
@@ -4343,6 +4421,7 @@
             }
 
             const failedWrites = [];
+            failedWrites.push(...await repairDuplicateBackpackRows(db, { quiet: true }));
             failedWrites.push(...await updateRows(updates, { quiet: true }));
             const statsResult = await upsertFirstRow(CONFIG.tables.stats, statsRow, statsUpdate, { quiet: true });
             if (apiWriteFailed(statsResult)) failedWrites.push(`${CONFIG.tables.stats}:upsert failed`);
@@ -4360,8 +4439,7 @@
                 await api.refreshDataAndWorldbook();
             }
 
-            const verifyDb = typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : db;
-            const missingDerived = verifyDerivedWrite(verifyDb, Boolean(playerRow && playerRow.__rowIndex));
+            const missingDerived = await waitForDerivedWriteVisibility(db, Boolean(playerRow && playerRow.__rowIndex));
             if (!failedWrites.length && !missingDerived.length) lastInputHash = inputHash;
 
             if (failedWrites.length || missingDerived.length) {
