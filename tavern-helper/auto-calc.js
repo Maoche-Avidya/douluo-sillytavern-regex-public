@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.51
+// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.6
 // @module       tavern-helper/auto-calc
-// @version      @0.51
+// @version      @0.6
 // @source       tavern-helper-scripts/auto-calc/dist/latest.json
 "use strict";
 
@@ -8,7 +8,7 @@
     'use strict';
 
     const SCRIPT_NAME = '斗罗自动计算脚本';
-    const VERSION = '0.51';
+    const VERSION = '0.6';
     const STORAGE_KEY = 'douluo_auto_calc_enabled';
     const LEGACY_STORAGE_KEYS = Object.freeze(['douluo_v03_auto_calc_enabled']);
     const EXTREME_ATTACK_MULTIPLIER = 1.5;
@@ -62,7 +62,14 @@
     const CORE_RECALC_TABLES = Object.freeze([
         CONFIG.tables.player,
         CONFIG.tables.stats,
+        CONFIG.tables.statsRuntime,
         CONFIG.tables.soulOverview,
+    ]);
+
+    const SINGLETON_TABLES = Object.freeze([
+        CONFIG.tables.player,
+        CONFIG.tables.stats,
+        CONFIG.tables.statsRuntime,
     ]);
 
     const DERIVED_STATS_FIELDS = Object.freeze([
@@ -80,6 +87,12 @@
 
     const DERIVED_PLAYER_FIELDS = Object.freeze([
         '战力标尺定位_脚本',
+    ]);
+
+    const BASE_STATS_FIELDS = Object.freeze([
+        '肉体_基础',
+        '魂力_基础',
+        '精神_基础',
     ]);
 
     const QUALITY = [
@@ -369,11 +382,11 @@
     }
 
     function runtimeStatsTableName(db) {
-        return getSheet(db, CONFIG.tables.statsRuntime) ? CONFIG.tables.statsRuntime : CONFIG.tables.stats;
+        return CONFIG.tables.statsRuntime;
     }
 
     function runtimeStatsRow(db, statsRow = null) {
-        return firstRow(db, runtimeStatsTableName(db)) || statsRow || {};
+        return firstRow(db, runtimeStatsTableName(db)) || {};
     }
 
     const RUNTIME_ROW_DEFAULTS = Object.freeze({
@@ -438,6 +451,17 @@
             || (playerRow && playerRow.__rowIndex && missingDerivedFields(playerRow, DERIVED_PLAYER_FIELDS).length > 0);
     }
 
+    function missingCoreInputFields(statsRow) {
+        const issues = [];
+        if (!statsRow || !statsRow.__rowIndex) {
+            issues.push(`${CONFIG.tables.stats}.row`);
+            return issues;
+        }
+        issues.push(...missingDerivedFields(statsRow, BASE_STATS_FIELDS)
+            .map(field => `${CONFIG.tables.stats}.${field}`));
+        return issues;
+    }
+
     function verifyDerivedWrite(db, expectPlayer) {
         const issues = missingDerivedFields(firstRow(db, CONFIG.tables.stats), DERIVED_STATS_FIELDS)
             .map(field => `${CONFIG.tables.stats}.${field}`);
@@ -486,7 +510,7 @@
     }
 
     function parseLevel(statsRow, playerRow) {
-        const text = asText(cell(statsRow, '魂力等级')) || asText(cell(playerRow, '魂力等级'));
+        const text = asText(cell(playerRow, '魂力等级')) || asText(cell(statsRow, '魂力等级'));
         const n = num(text, NaN);
         if (Number.isFinite(n)) return Math.max(1, Math.floor(n));
         return 1;
@@ -1080,7 +1104,7 @@
             notes.push('屠龙者:龙类魂环肉体增益x2');
         }
 
-        const ringIndex = num(cell(row, '魂环序号'), 0);
+        const ringIndex = ordinalNumber(cell(row, '魂环序号'));
         if (ringIndex === 1 && hasTrait(traits, /超绝吟唱|终极吟唱/)) {
             out = bonus(out.body * 2, out.soul * 2, out.mind * 2);
             notes.push('超绝吟唱:第一魂环属性x2');
@@ -1158,6 +1182,14 @@
         return { daily, details };
     }
 
+    function stripScriptDailyAdjustments(value) {
+        return asText(value)
+            .split(/[;；]/)
+            .map(part => part.trim())
+            .filter(part => part && !/^称号调整=/.test(part))
+            .join(';');
+    }
+
     function refreshTraitEquipmentSlots(db, traits) {
         const updates = [];
         const slotRows = rows(db, CONFIG.tables.traitEquipmentSlots);
@@ -1167,13 +1199,12 @@
             const trait = traitName(row);
             const active = trait && Array.from(traits).some(name => name.includes(trait) || trait.includes(name));
             const display = active ? '是' : '否';
-            const enabled = active ? '是' : '否';
             visibleBySlot.set(asText(cell(row, '槽位ID')), display);
-            if (asText(cell(row, '是否显示_脚本')) !== display || asText(cell(row, '是否启用')) !== enabled) {
+            if (asText(cell(row, '是否显示_脚本')) !== display) {
                 updates.push({
                     table: CONFIG.tables.traitEquipmentSlots,
                     rowIndex: row.__rowIndex,
-                    data: { '是否显示_脚本': display, '是否启用': enabled },
+                    data: { '是否显示_脚本': display },
                 });
             }
         }
@@ -1412,6 +1443,54 @@
             if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe delete failed`);
         }
         return failed;
+    }
+
+    function singletonCellHasValue(value) {
+        const text = asText(value);
+        return Boolean(text) && !/^(null|undefined)$/i.test(text);
+    }
+
+    async function repairDuplicateSingletonRows(db, tableName, options = {}) {
+        const list = rows(db, tableName).filter(row => row && row.__rowIndex);
+        if (list.length <= 1) return { changed: false, failed: [] };
+
+        list.sort((a, b) => a.__rowIndex - b.__rowIndex);
+        const keeper = list[0];
+        const merged = {};
+        for (const row of list) {
+            for (const [key, value] of Object.entries(row)) {
+                if (key.startsWith('__') || key === 'row_id') continue;
+                if (singletonCellHasValue(value)) merged[key] = value;
+            }
+        }
+
+        const failed = [];
+        const needsMerge = Object.entries(merged).some(([key, value]) => asText(keeper[key]) !== asText(value));
+        if (needsMerge) {
+            const result = await updateRowCompat(tableName, keeper.__rowIndex, merged, options);
+            if (apiWriteFailed(result)) {
+                failed.push(`${tableName}:singleton merge failed`);
+                return { changed: false, failed };
+            }
+        }
+
+        for (const row of list.slice(1).sort((a, b) => b.__rowIndex - a.__rowIndex)) {
+            const result = await deleteRowCompat(tableName, row.__rowIndex, options);
+            if (apiWriteFailed(result)) failed.push(`${tableName}:singleton duplicate delete failed`);
+        }
+
+        return { changed: failed.length === 0, failed };
+    }
+
+    async function repairSingletonTables(db, options = {}) {
+        const failed = [];
+        let changed = false;
+        for (const tableName of SINGLETON_TABLES) {
+            const result = await repairDuplicateSingletonRows(db, tableName, options);
+            failed.push(...result.failed);
+            changed = changed || result.changed;
+        }
+        return { changed, failed };
     }
 
     async function upsertFirstRow(tableName, existingRow, data, options = {}) {
@@ -2340,13 +2419,21 @@
         return Number.isFinite(value) && value >= 1 ? String(Math.floor(value)) : '1';
     }
 
+    function creationPayloadLevel(character, profile, payload) {
+        return asText(profile?.level)
+            || asText(payload?.effectiveInnateSoulPower)
+            || asText(character?.explicitLevel)
+            || asText(character?.userLevel)
+            || '10';
+    }
+
     function buildCreationMapping(payload, db = {}) {
         const character = payload?.character || {};
         const pointBuy = payload?.pointBuy || {};
         const profile = payload?.effectiveInnateProfile || {};
         const worldBook = payload?.worldBookProfile || {};
         const ops = [];
-        const runtimeTable = runtimeStatsTableName(db);
+        const runtimeTable = CONFIG.tables.statsRuntime;
         const battle = character.battle || payload?.battle || {};
         const daily = character.daily || payload?.daily || {};
         const dailyLabels = { comprehension: '悟性', presence: '气场', craft: '百工', luck: '气运', knowledge: '学识', experience: '阅历' };
@@ -2362,7 +2449,7 @@
             || (Array.isArray(attributeTotals.dailyCheckBonuses) ? attributeTotals.dailyCheckBonuses.map(item => asText(item.summary) || [asText(item.attr), asText(item.scene), asText(item.check) ? `${asText(item.check)}检定+${Number(item.bonus) || 1}` : '检定+1'].filter(Boolean).join(':')).filter(Boolean).join(';') : '');
         const attributeSpecialText = asText(attributeTotals.specialEffectSummary)
             || (Array.isArray(attributeTotals.specialEffects) ? attributeTotals.specialEffects.map(item => asText(item.summary)).filter(Boolean).join(';') : '');
-        const level = asText(character.level) || asText(profile.level) || '10';
+        const level = creationPayloadLevel(character, profile, payload);
         const name = asText(character.name) || (payload?.species === 'beast' ? '未命名魂兽' : '未命名魂师');
         const effectiveSouls = (Array.isArray(character.effectiveSouls) && character.effectiveSouls.length
             ? character.effectiveSouls
@@ -2403,17 +2490,12 @@
             '日常六维与调整值': dailyText,
         }, { fallbackIndex: 1 });
 
-        addMappingOp(db, ops, runtimeTable, runtimeTable === CONFIG.tables.statsRuntime ? runtimeRowDefaults({
+        addMappingOp(db, ops, runtimeTable, runtimeRowDefaults({
             '特性点': String(pointBuy.remain ?? pointBuy.spRemain ?? CONFIG.defaults.baseSp),
             '红尘点': String(pointBuy.dpRemain ?? CONFIG.defaults.baseDp),
             '自动计算锁定': '否',
             '计算备注': [`前端建档;SP剩余=${pointBuy.remain ?? pointBuy.spRemain ?? CONFIG.defaults.baseSp};DP剩余=${pointBuy.dpRemain ?? CONFIG.defaults.baseDp}`, attributeCheckText ? `属性检定修正=${attributeCheckText}` : '', attributeSpecialText ? `特殊属性效果=${attributeSpecialText}` : ''].filter(Boolean).join(';'),
-        }) : {
-            '特性点': String(pointBuy.remain ?? pointBuy.spRemain ?? CONFIG.defaults.baseSp),
-            '红尘点': String(pointBuy.dpRemain ?? CONFIG.defaults.baseDp),
-            '自动计算锁定': '否',
-            '计算备注': [`前端建档;SP剩余=${pointBuy.remain ?? pointBuy.spRemain ?? CONFIG.defaults.baseSp};DP剩余=${pointBuy.dpRemain ?? CONFIG.defaults.baseDp}`, attributeCheckText ? `属性检定修正=${attributeCheckText}` : '', attributeSpecialText ? `特殊属性效果=${attributeSpecialText}` : ''].filter(Boolean).join(';'),
-        }, { fallbackIndex: 1 });
+        }), { fallbackIndex: 1 });
 
         effectiveSouls.forEach((soul, index) => {
             const soulName = payloadSoulName(soul, index);
@@ -2584,6 +2666,36 @@
         return buildCreationMapping(payload, db);
     }
 
+    function verifyCreationWriteback(db, mapping) {
+        const issues = [];
+        if (!db) return ['exportTableAsJson failed after creation write'];
+
+        const statsRow = firstRow(db, CONFIG.tables.stats);
+        const playerRow = firstRow(db, CONFIG.tables.player);
+        const requiredStatsFields = ['魂力等级', ...BASE_STATS_FIELDS];
+        issues.push(...missingDerivedFields(statsRow, requiredStatsFields)
+            .map(field => `${CONFIG.tables.stats}.${field}:missing`));
+        issues.push(...missingDerivedFields(playerRow, ['魂力等级'])
+            .map(field => `${CONFIG.tables.player}.${field}:missing`));
+
+        const ringTables = new Set(CONFIG.tables.rings);
+        for (const op of mapping?.ops || []) {
+            if (!ringTables.has(op.table)) continue;
+            const soulName = asText(op.data?.['武魂名称']);
+            const ringIndex = asText(op.data?.['魂环序号']);
+            if (!soulName || !ringIndex) {
+                issues.push(`${op.table}:魂环关键字段为空`);
+                continue;
+            }
+            const found = rows(db, op.table).some(row =>
+                asText(cell(row, '武魂名称')) === soulName
+                && asText(cell(row, '魂环序号')) === ringIndex
+            );
+            if (!found) issues.push(`${op.table}:${soulName}/${ringIndex}:missing`);
+        }
+        return issues;
+    }
+
     function apiWriteFailed(result) {
         return result === false
             || result === null
@@ -2694,13 +2806,19 @@
             }
             else missing.push(`${op.table}:缺少可写行`);
         }
+        if (api.refreshDataAndWorldbook) await api.refreshDataAndWorldbook();
+        if (!missing.length) {
+            missing.push(...verifyCreationWriteback(exportDatabase(db), mapping));
+        }
+        if (missing.length) {
+            return { ok: false, message: `重算已停止，${missing.length}项写入/校验失败。`, missing, mapping, recalculation: null };
+        }
         let recalculation = null;
         if (!options.skipRecalculate) {
             recalculation = await recalculate({ force: true });
             if ((recalculation?.skipped || recalculation?.ok === false) && api.refreshDataAndWorldbook) await api.refreshDataAndWorldbook();
         }
-        else if (api.refreshDataAndWorldbook) await api.refreshDataAndWorldbook();
-        return { ok: missing.length === 0, message: missing.length ? `部分写入完成，跳过${missing.length}项。` : `已写入${mapping.ops.length}项数据库更新。`, missing, mapping };
+        return { ok: true, message: `已写入${mapping.ops.length}项数据库更新。`, missing, mapping, recalculation };
     }
 
     function diagnose(dbOverride = null) {
@@ -4278,7 +4396,7 @@
             return { ok: false, reason: 'exportTableAsJson unavailable' };
         }
 
-        const db = exportDatabase(null);
+        let db = exportDatabase(null);
         if (!db) {
             recalcToast(options, '无法导出当前数据库。', 'warning', 'severe');
             return { ok: false, reason: 'exportTableAsJson failed' };
@@ -4291,43 +4409,53 @@
             return { ok: false, reason: 'database template incomplete', missingTables: readiness.missing };
         }
 
-        const statsRow = firstRow(db, CONFIG.tables.stats);
-        const runtimeTable = runtimeStatsTableName(db);
-        const runtimeRow = runtimeStatsRow(db, statsRow);
-        const playerRow = firstRow(db, CONFIG.tables.player);
-        const hasMissingDerived = derivedFieldsMissing(statsRow, playerRow);
-
-        const inputHash = stableHash({
-            stats: rows(db, CONFIG.tables.stats),
-            statsRuntime: rows(db, CONFIG.tables.statsRuntime),
-            player: rows(db, CONFIG.tables.player),
-            traits: rows(db, CONFIG.tables.traits),
-            traitState: rows(db, CONFIG.tables.traitState),
-            traitRules: rows(db, CONFIG.tables.traitRules),
-            traitAttributeRules: rows(db, CONFIG.tables.traitAttributeRules),
-            traitEquipmentSlots: rows(db, CONFIG.tables.traitEquipmentSlots),
-            traitTempStates: rows(db, CONFIG.tables.traitTempStates),
-            skills: rows(db, CONFIG.tables.skills),
-            soulOverview: rows(db, CONFIG.tables.soulOverview),
-            rings: CONFIG.tables.rings.map(name => rows(db, name)),
-            soulBones: rows(db, CONFIG.tables.soulBones),
-            spirits: rows(db, CONFIG.tables.spirits),
-            armor: rows(db, CONFIG.tables.armor),
-            soulDevices: rows(db, CONFIG.tables.soulDevices),
-            titlePanel: rows(db, CONFIG.tables.titlePanel),
-        });
-        if (!options.force && !hasMissingDerived && inputHash === lastInputHash) {
-            log('输入未变化，跳过重算');
-            return { ok: true, skipped: true };
-        }
-
-        if (/是|锁定|true|1/i.test(asText(cell(runtimeRow, '自动计算锁定')))) {
-            recalcToast(options, '人物运行状态面板已锁定，跳过自动计算。', 'info');
-            return { ok: true, skipped: true, reason: 'locked' };
-        }
-
         isWriting = true;
         try {
+            const singletonRepair = await repairSingletonTables(db, { quiet: true });
+            if (singletonRepair.changed) db = exportDatabase(db) || db;
+
+            const statsRow = firstRow(db, CONFIG.tables.stats);
+            const runtimeTable = runtimeStatsTableName(db);
+            const runtimeRow = runtimeStatsRow(db, statsRow);
+            const playerRow = firstRow(db, CONFIG.tables.player);
+            const hasMissingDerived = derivedFieldsMissing(statsRow, playerRow);
+            const missingCoreInputs = missingCoreInputFields(statsRow);
+            if (missingCoreInputs.length) {
+                const message = `核心基础字段未完整落库：${missingCoreInputs.join('、')}`;
+                console.warn(`[${SCRIPT_NAME}] ${message}`);
+                recalcToast(options, message, 'warning', 'severe');
+                return { ok: false, reason: 'core input incomplete', missingCoreInputs, failedWrites: singletonRepair.failed };
+            }
+
+            const inputHash = stableHash({
+                stats: rows(db, CONFIG.tables.stats),
+                statsRuntime: rows(db, CONFIG.tables.statsRuntime),
+                player: rows(db, CONFIG.tables.player),
+                traits: rows(db, CONFIG.tables.traits),
+                traitState: rows(db, CONFIG.tables.traitState),
+                traitRules: rows(db, CONFIG.tables.traitRules),
+                traitAttributeRules: rows(db, CONFIG.tables.traitAttributeRules),
+                traitEquipmentSlots: rows(db, CONFIG.tables.traitEquipmentSlots),
+                traitTempStates: rows(db, CONFIG.tables.traitTempStates),
+                skills: rows(db, CONFIG.tables.skills),
+                soulOverview: rows(db, CONFIG.tables.soulOverview),
+                rings: CONFIG.tables.rings.map(name => rows(db, name)),
+                soulBones: rows(db, CONFIG.tables.soulBones),
+                spirits: rows(db, CONFIG.tables.spirits),
+                armor: rows(db, CONFIG.tables.armor),
+                soulDevices: rows(db, CONFIG.tables.soulDevices),
+                titlePanel: rows(db, CONFIG.tables.titlePanel),
+            });
+            if (!options.force && !hasMissingDerived && !singletonRepair.changed && inputHash === lastInputHash) {
+                log('输入未变化，跳过重算');
+                return { ok: true, skipped: true };
+            }
+
+            if (/是|锁定|true|1/i.test(asText(cell(runtimeRow, '自动计算锁定')))) {
+                recalcToast(options, '人物运行状态面板已锁定，跳过自动计算。', 'info');
+                return { ok: true, skipped: true, reason: 'locked', failedWrites: singletonRepair.failed };
+            }
+
             const level = parseLevel(statsRow, playerRow);
             const traits = collectTraits(db);
             const attrRules = collectTraitAttributeRules(db, traits);
@@ -4422,7 +4550,7 @@
                 '魂力_最终_脚本': String(round(finalCalc.final.soul)),
                 '精神_最终_脚本': String(round(finalCalc.final.mind)),
                 '日常六维与调整值': [
-                    asText(cell(statsRow, '日常六维与调整值')),
+                    stripScriptDailyAdjustments(cell(statsRow, '日常六维与调整值')),
                     dailyBonuses.details.length ? `称号调整=${dailyBonuses.details.join('|')}` : '',
                 ].filter(Boolean).join(';'),
             };
@@ -4452,7 +4580,7 @@
                 runtimeUpdate['计算备注'] += `;当前值处理=${[hpClamp.reason, mpClamp.reason, spiritClamp.reason].filter(Boolean).join('|')}`;
             }
 
-            const failedWrites = [];
+            const failedWrites = [...singletonRepair.failed];
             failedWrites.push(...await repairDuplicateBackpackRows(db, { quiet: true }));
             failedWrites.push(...await updateRows(updates, { quiet: true }));
             const statsResult = await upsertFirstRow(CONFIG.tables.stats, statsRow, statsUpdate, { quiet: true });
@@ -4461,7 +4589,6 @@
             if (apiWriteFailed(runtimeResult)) failedWrites.push(`${runtimeTable}:upsert failed`);
             if (playerRow && playerRow.__rowIndex) {
                 const playerResult = await updateRowCompat(CONFIG.tables.player, playerRow.__rowIndex, {
-                    '魂力等级': String(level),
                     '战力标尺定位_脚本': scale,
                 }, { quiet: true });
                 if (apiWriteFailed(playerResult)) failedWrites.push(`${CONFIG.tables.player}:updateRow failed`);
