@@ -14,6 +14,8 @@
 
   function stripHtmlFence(value) {
     let text = String(value || "");
+    const fenceIndex = text.toLowerCase().indexOf("```html");
+    if (fenceIndex > 0) text = text.slice(fenceIndex);
     if (text.slice(0, 7).toLowerCase() === "```html") {
       text = text.slice(7);
       if (text.slice(0, 2) === "\r\n") text = text.slice(2);
