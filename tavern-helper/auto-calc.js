@@ -311,6 +311,33 @@
         return rowsFromSheet(getSheet(db, tableName));
     }
 
+    function tableHeaders(db, tableName) {
+        const sheet = getSheet(db, tableName);
+        if (sheet && Array.isArray(sheet.content) && Array.isArray(sheet.content[0])) return sheet.content[0].map(asText);
+        if (Array.isArray(sheet) && Array.isArray(sheet[0])) return sheet[0].map(asText);
+        return [];
+    }
+
+    function sanitizeWriteData(data = {}) {
+        return Object.fromEntries(Object.entries(data || {}).map(([key, value]) => [key, value == null ? '' : value]));
+    }
+
+    function completeInsertData(tableName, data = {}) {
+        const currentDb = api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : null;
+        const headers = tableHeaders(currentDb, tableName);
+        if (!headers.length) return sanitizeWriteData(data);
+
+        const out = {};
+        for (const header of headers) {
+            if (!header || header === 'row_id') continue;
+            out[header] = data[header] == null ? '' : data[header];
+        }
+        for (const [key, value] of Object.entries(data || {})) {
+            out[key] = value == null ? '' : value;
+        }
+        return out;
+    }
+
     function firstRow(db, tableName) {
         return rows(db, tableName)[0] || {};
     }
@@ -2473,8 +2500,9 @@
 
     async function updateRowCompat(tableName, rowIndex, data, options = {}) {
         if (!api || typeof api.updateRow !== 'function') return false;
+        const safeData = sanitizeWriteData(data);
         try {
-            const result = await api.updateRow(tableName, rowIndex, data);
+            const result = await api.updateRow(tableName, rowIndex, safeData);
             if (!apiWriteFailed(result) || options.fallbackObject === false) return result;
         } catch (error) {
             if (options.fallbackObject === false) throw error;
@@ -2484,7 +2512,7 @@
             return await api.updateRow({
                 tableName,
                 rowIndex,
-                data,
+                data: safeData,
                 ...writeMutationOptions(options),
             });
         } catch (error) {
@@ -2495,8 +2523,9 @@
 
     async function insertRowCompat(tableName, data, options = {}) {
         if (!api || typeof api.insertRow !== 'function') return false;
+        const safeData = completeInsertData(tableName, data);
         try {
-            const result = await api.insertRow(tableName, data);
+            const result = await api.insertRow(tableName, safeData);
             if (!apiWriteFailed(result) || options.fallbackObject === false) return result;
         } catch (error) {
             if (options.fallbackObject === false) throw error;
@@ -2505,7 +2534,7 @@
         try {
             return await api.insertRow({
                 tableName,
-                data,
+                data: safeData,
                 ...writeMutationOptions(options),
             });
         } catch (error) {
@@ -4337,8 +4366,9 @@
 
             if (failedWrites.length || missingDerived.length) {
                 const parts = [];
-                if (failedWrites.length) parts.push(`${failedWrites.length}项写入失败`);
+                if (failedWrites.length) parts.push(`${failedWrites.length}项写入失败：${failedWrites.slice(0, 3).join('、')}`);
                 if (missingDerived.length) parts.push(`脚本字段未落库：${missingDerived.slice(0, 6).join('、')}`);
+                console.warn(`[${SCRIPT_NAME}] writeback incomplete`, { failedWrites, missingDerived });
                 toast(`重算完成，但${parts.join('；')}，下轮会继续重试。`, 'warning');
             } else {
                 toast(`重算完成：${soulRealm(level)} / ${realm} / ${scale}`, 'success');
