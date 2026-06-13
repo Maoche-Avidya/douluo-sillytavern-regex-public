@@ -147,6 +147,20 @@
         return getHostGlobal('AutoCardUpdaterAPI');
     }
 
+    function canExportDatabase() {
+        return api && typeof api.exportTableAsJson === 'function';
+    }
+
+    function exportDatabase(fallback = null) {
+        if (!canExportDatabase()) return fallback;
+        try {
+            return api.exportTableAsJson() || fallback;
+        } catch (error) {
+            console.warn(`[${SCRIPT_NAME}] exportTableAsJson failed`, error);
+            return fallback;
+        }
+    }
+
     function getSillyTavernContext() {
         for (const host of hostWindows()) {
             try {
@@ -326,7 +340,7 @@
     }
 
     function completeInsertData(tableName, data = {}) {
-        const currentDb = api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : null;
+        const currentDb = exportDatabase(null);
         const headers = tableHeaders(currentDb, tableName);
         if (!headers.length) return sanitizeWriteData(data);
 
@@ -427,11 +441,11 @@
 
     async function waitForDerivedWriteVisibility(fallbackDb, expectPlayer) {
         function readDb() {
-            return api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : fallbackDb;
+            return exportDatabase(fallbackDb);
         }
 
         let missing = verifyDerivedWrite(readDb() || fallbackDb, expectPlayer);
-        if (!missing.length || !api || typeof api.exportTableAsJson !== 'function') return missing;
+        if (!missing.length || !canExportDatabase()) return missing;
 
         const deadline = Date.now() + CONFIG.writeVerifyTimeoutMs;
         while (missing.length && Date.now() < deadline) {
@@ -530,8 +544,9 @@
 
     async function getPointState() {
         api = getDatabaseApi() || api || await waitForDatabaseApi();
-        if (!api) return null;
-        const db = api.exportTableAsJson();
+        if (!api || !canExportDatabase()) return null;
+        const db = exportDatabase(null);
+        if (!db) return null;
         const statsRow = firstRow(db, CONFIG.tables.stats);
         const runtimeRow = runtimeStatsRow(db, statsRow);
         const playerRow = firstRow(db, CONFIG.tables.player);
@@ -2556,7 +2571,7 @@
     }
 
     function previewCreationMapping(payload, dbOverride = null) {
-        const db = dbOverride || (api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : {});
+        const db = dbOverride || exportDatabase({});
         return buildCreationMapping(payload, db);
     }
 
@@ -2646,7 +2661,9 @@
     async function applyCreationPayload(payload, options = {}) {
         api = getDatabaseApi() || api || await waitForDatabaseApi();
         if (!api || typeof api.updateRow !== 'function') return { ok: false, message: 'AutoCardUpdaterAPI.updateRow unavailable' };
-        const db = api.exportTableAsJson ? api.exportTableAsJson() : {};
+        if (!canExportDatabase()) return { ok: false, message: 'AutoCardUpdaterAPI.exportTableAsJson unavailable' };
+        const db = exportDatabase(null);
+        if (!db) return { ok: false, message: 'exportTableAsJson failed' };
         const mapping = buildCreationMapping(payload, db);
         const readiness = verifyDatabaseReady(db, mapping.summary.tables);
         if (!readiness.ok) {
@@ -2678,7 +2695,7 @@
     }
 
     function diagnose(dbOverride = null) {
-        const db = dbOverride || (api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : null);
+        const db = dbOverride || exportDatabase(null);
         const issues = [];
         if (!db) return { ok: false, issues: ['无法读取数据库'] };
         const missing = missingTables(db);
@@ -3780,7 +3797,7 @@
     }
 
     function buildCombatResolution(text, options = {}) {
-        const db = options.db || (api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : {});
+        const db = options.db || exportDatabase({});
         const diagnostics = [];
         const combatRow = currentCombatRow(db);
         const unitState = parseCombatUnitState(combatRow);
@@ -4150,7 +4167,9 @@
         if (!api || typeof api.updateRow !== 'function') {
             return { ok: false, message: 'AutoCardUpdaterAPI.updateRow unavailable' };
         }
-        let db = api.exportTableAsJson ? api.exportTableAsJson() : {};
+        if (!canExportDatabase()) return { ok: false, message: 'AutoCardUpdaterAPI.exportTableAsJson unavailable' };
+        let db = exportDatabase(null);
+        if (!db) return { ok: false, message: 'exportTableAsJson failed' };
         const sourceText = asText(text) || latestPlayerInputText();
         const preliminaryAction = parsePlayerCombatAction(sourceText, options);
         let combatRow = currentCombatRow(db);
@@ -4166,7 +4185,7 @@
             await upsertFirstRow(runtimeStatsTableName(db), runtimeRow, { '武魂真身状态': '已开启' }, options);
             await recalculate({ force: true, reason: 'combat-avatar-before-action' });
             avatarPreRecalculated = true;
-            db = api.exportTableAsJson ? api.exportTableAsJson() : db;
+            db = exportDatabase(db);
             combatRow = currentCombatRow(db);
         }
 
@@ -4245,8 +4264,12 @@
             toast('未检测到 shujuku / AutoCardUpdaterAPI，无法计算数据库。', 'warning');
             return { ok: false, reason: 'AutoCardUpdaterAPI unavailable' };
         }
+        if (!canExportDatabase()) {
+            toast('未检测到 exportTableAsJson，无法导出当前数据库。', 'warning');
+            return { ok: false, reason: 'exportTableAsJson unavailable' };
+        }
 
-        const db = api.exportTableAsJson();
+        const db = exportDatabase(null);
         if (!db) {
             toast('无法导出当前数据库。', 'warning');
             return { ok: false, reason: 'exportTableAsJson failed' };
@@ -4578,9 +4601,9 @@
         previewCreationMapping,
         applyCreationPayload,
         diagnose,
-        checkDatabaseReady: () => verifyDatabaseReady(api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : null),
-        checkCoreDatabaseReady: () => verifyDatabaseReady(api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : null, CORE_RECALC_TABLES),
-        checkFullTemplateReady: () => verifyDatabaseReady(api && typeof api.exportTableAsJson === 'function' ? api.exportTableAsJson() : null, REQUIRED_TEMPLATE_TABLES),
+        checkDatabaseReady: () => verifyDatabaseReady(exportDatabase(null)),
+        checkCoreDatabaseReady: () => verifyDatabaseReady(exportDatabase(null), CORE_RECALC_TABLES),
+        checkFullTemplateReady: () => verifyDatabaseReady(exportDatabase(null), REQUIRED_TEMPLATE_TABLES),
         calculateCombat,
         calculateDamageResolution,
         calculateControlResolution,
