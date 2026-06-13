@@ -1,7 +1,7 @@
 // ==DouluoLockedRegex==
-// @name         [状态栏]斗罗大陆 I-IV · Soul Land 星海状态中枢 @0.5
+// @name         [状态栏]斗罗大陆 I-IV · Soul Land 星海状态中枢 @0.51
 // @module       status-bar
-// @version      @0.5
+// @version      @0.51
 // @build        deterministic
 // @sourceHash   sha256:61f47d8ec14d2455426397ad75ca85bbf2723a319e116d521fc4a901aa58f744
 // ==/DouluoLockedRegex==

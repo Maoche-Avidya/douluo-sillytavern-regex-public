@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.5
+// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.51
 // @module       tavern-helper/auto-calc
-// @version      @0.5
+// @version      @0.51
 // @source       tavern-helper-scripts/auto-calc/dist/latest.json
 "use strict";
 
@@ -8,7 +8,7 @@
     'use strict';
 
     const SCRIPT_NAME = '斗罗自动计算脚本';
-    const VERSION = '0.4.8';
+    const VERSION = '0.51';
     const STORAGE_KEY = 'douluo_auto_calc_enabled';
     const LEGACY_STORAGE_KEYS = Object.freeze(['douluo_v03_auto_calc_enabled']);
     const EXTREME_ATTACK_MULTIPLIER = 1.5;
@@ -117,6 +117,15 @@
         const t = window.toastr;
         if (t && typeof t[type] === 'function') t[type](message, SCRIPT_NAME);
         else console.log(`[${SCRIPT_NAME}][${type}]`, message);
+    }
+
+    function shouldToastRecalculate(options = {}, severity = 'normal') {
+        if (severity === 'severe') return true;
+        return Boolean(options.notify || options.showToast);
+    }
+
+    function recalcToast(options, message, type = 'info', severity = 'normal') {
+        if (shouldToastRecalculate(options, severity)) toast(message, type);
     }
 
     function sleep(ms) {
@@ -4261,24 +4270,24 @@
         if (isWriting) return { skipped: true, reason: '正在写入' };
         api = getDatabaseApi() || api || await waitForDatabaseApi();
         if (!api) {
-            toast('未检测到 shujuku / AutoCardUpdaterAPI，无法计算数据库。', 'warning');
+            recalcToast(options, '未检测到 shujuku / AutoCardUpdaterAPI，无法计算数据库。', 'warning', 'severe');
             return { ok: false, reason: 'AutoCardUpdaterAPI unavailable' };
         }
         if (!canExportDatabase()) {
-            toast('未检测到 exportTableAsJson，无法导出当前数据库。', 'warning');
+            recalcToast(options, '未检测到 exportTableAsJson，无法导出当前数据库。', 'warning', 'severe');
             return { ok: false, reason: 'exportTableAsJson unavailable' };
         }
 
         const db = exportDatabase(null);
         if (!db) {
-            toast('无法导出当前数据库。', 'warning');
+            recalcToast(options, '无法导出当前数据库。', 'warning', 'severe');
             return { ok: false, reason: 'exportTableAsJson failed' };
         }
 
         const readiness = verifyDatabaseReady(db);
         if (!readiness.ok) {
             console.warn(`[${SCRIPT_NAME}] ${readiness.message}`, readiness.missing);
-            toast(readiness.message, 'warning');
+            recalcToast(options, readiness.message, 'warning', 'severe');
             return { ok: false, reason: 'database template incomplete', missingTables: readiness.missing };
         }
 
@@ -4313,7 +4322,7 @@
         }
 
         if (/是|锁定|true|1/i.test(asText(cell(runtimeRow, '自动计算锁定')))) {
-            toast('人物运行状态面板已锁定，跳过自动计算。', 'info');
+            recalcToast(options, '人物运行状态面板已锁定，跳过自动计算。', 'info');
             return { ok: true, skipped: true, reason: 'locked' };
         }
 
@@ -4470,14 +4479,14 @@
                 if (failedWrites.length) parts.push(`${failedWrites.length}项写入失败：${failedWrites.slice(0, 3).join('、')}`);
                 if (missingDerived.length) parts.push(`脚本字段未落库：${missingDerived.slice(0, 6).join('、')}`);
                 console.warn(`[${SCRIPT_NAME}] writeback incomplete`, { failedWrites, missingDerived });
-                toast(`重算完成，但${parts.join('；')}，下轮会继续重试。`, 'warning');
+                recalcToast(options, `重算完成，但${parts.join('；')}，下轮会继续重试。`, 'warning', failedWrites.length ? 'severe' : 'normal');
             } else {
-                toast(`重算完成：${soulRealm(level)} / ${realm} / ${scale}`, 'success');
+                recalcToast(options, `重算完成：${soulRealm(level)} / ${realm} / ${scale}`, 'success');
             }
             return { ok: failedWrites.length === 0 && missingDerived.length === 0, level, realm, scale, pointState, failedWrites, missingDerived };
         } catch (error) {
             console.error(`[${SCRIPT_NAME}]`, error);
-            toast(`重算失败：${error.message || error}`, 'error');
+            recalcToast(options, `重算失败：${error.message || error}`, 'error', 'severe');
             return { ok: false, error };
         } finally {
             isWriting = false;
@@ -4595,7 +4604,7 @@
 
     const publicApi = {
         version: VERSION,
-        recalculate: () => recalculate({ force: true }),
+        recalculate: (options = {}) => recalculate({ force: true, ...options }),
         getPointState,
         pointGrowthForLevel,
         previewCreationMapping,

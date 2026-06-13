@@ -1,7 +1,7 @@
 // ==DouluoLockedRegex==
-// @name         [封面]斗罗大陆 I-IV · Soul Land 命运之路 @0.5
+// @name         [封面]斗罗大陆 I-IV · Soul Land 命运之路 @0.51
 // @module       cover
-// @version      @0.5
+// @version      @0.51
 // @build        deterministic
 // @sourceHash   sha256:1c5b0e614a7cc5688517385cc4663f9866690275bc27a5110a3d75772991f002
 // ==/DouluoLockedRegex==
