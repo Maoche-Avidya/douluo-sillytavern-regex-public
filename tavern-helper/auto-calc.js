@@ -323,6 +323,32 @@
         return firstRow(db, runtimeStatsTableName(db)) || statsRow || {};
     }
 
+    const RUNTIME_ROW_DEFAULTS = Object.freeze({
+        '血量当前': '',
+        '蓝量当前': '',
+        '精神力当前': '',
+        '特性点': '',
+        '红尘点': '',
+        '武魂真身状态': '否',
+        '其他增减益': '',
+        '领域/持续状态': '',
+        '控制/异常状态': '',
+        '自动计算锁定': '否',
+        '计算备注': '',
+    });
+
+    function runtimeRowDefaults(data = {}) {
+        return { ...RUNTIME_ROW_DEFAULTS, ...data };
+    }
+
+    function runtimeRowNullRepair(existingRow, data = {}) {
+        const out = { ...data };
+        for (const [field, value] of Object.entries(RUNTIME_ROW_DEFAULTS)) {
+            if (!existingRow || existingRow[field] === undefined || existingRow[field] === null) out[field] = value;
+        }
+        return out;
+    }
+
     const COLUMN_ALIASES = {
         'row_id': ['行编号'],
         '行编号': ['row_id'],
@@ -1261,10 +1287,12 @@
 
     async function upsertFirstRow(tableName, existingRow, data, options = {}) {
         if (existingRow && existingRow.__rowIndex) {
-            return updateRowCompat(tableName, existingRow.__rowIndex, data, options);
+            const updateData = tableName === CONFIG.tables.statsRuntime ? runtimeRowNullRepair(existingRow, data) : data;
+            return updateRowCompat(tableName, existingRow.__rowIndex, updateData, options);
         }
         if (typeof api.insertRow === 'function') {
-            return insertRowCompat(tableName, { row_id: 1, ...data }, options);
+            const insertData = tableName === CONFIG.tables.statsRuntime ? runtimeRowDefaults(data) : data;
+            return insertRowCompat(tableName, { row_id: 1, ...insertData }, options);
         }
         return false;
     }
@@ -2246,7 +2274,12 @@
             '日常六维与调整值': dailyText,
         }, { fallbackIndex: 1 });
 
-        addMappingOp(db, ops, runtimeTable, {
+        addMappingOp(db, ops, runtimeTable, runtimeTable === CONFIG.tables.statsRuntime ? runtimeRowDefaults({
+            '特性点': String(pointBuy.remain ?? pointBuy.spRemain ?? CONFIG.defaults.baseSp),
+            '红尘点': String(pointBuy.dpRemain ?? CONFIG.defaults.baseDp),
+            '自动计算锁定': '否',
+            '计算备注': [`前端建档;SP剩余=${pointBuy.remain ?? pointBuy.spRemain ?? CONFIG.defaults.baseSp};DP剩余=${pointBuy.dpRemain ?? CONFIG.defaults.baseDp}`, attributeCheckText ? `属性检定修正=${attributeCheckText}` : '', attributeSpecialText ? `特殊属性效果=${attributeSpecialText}` : ''].filter(Boolean).join(';'),
+        }) : {
             '特性点': String(pointBuy.remain ?? pointBuy.spRemain ?? CONFIG.defaults.baseSp),
             '红尘点': String(pointBuy.dpRemain ?? CONFIG.defaults.baseDp),
             '自动计算锁定': '否',
