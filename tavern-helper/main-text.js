@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 正文阅读 @0.6.2
+// @name         [助手]斗罗大陆 I-IV · Soul Land 正文阅读 @0.6.4
 // @module       tavern-helper/main-text
-// @version      @0.6.2
+// @version      @0.6.4
 // @source       tavern-helper-scripts/main-text/dist/latest.json
 "use strict";
 
@@ -8,11 +8,11 @@
   "use strict";
 
   const SCRIPT_NAME = "斗罗正文阅读助手脚本";
-  const VERSION = "0.6.2";
+  const VERSION = "0.6.4";
   const MODULE_KIND = "main-text";
   const API_NAME = "DouLuoMainTextHelper";
   const MARK_TEXT = null;
-  const BUILD_ID = "main-text@0.6.2+05c728bc1a96";
+  const BUILD_ID = "main-text@0.6.4+05c728bc1a96";
   const STYLE_ID = "douluo-main-text-helper-style";
   const ROOT_SELECTOR = "[data-main-text-root]";
   const HTML = "\u003c!DOCTYPE html>\n\u003chtml lang=\"zh-CN\">\n\u003chead>\n\u003cmeta charset=\"UTF-8\" />\n\u003cmeta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n\u003ctitle>斗罗正文阅读\u003c/title>\n\u003clink rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n\u003clink rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n\u003clink href=\"https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&display=swap\" rel=\"stylesheet\" />\n\u003cscript>\n  (() => {\n    const themes = new Set([\"starsea\", \"starsea-night\", \"paper\", \"paper-night\"]);\n    let saved = \"starsea\";\n    try {\n      saved = (window.localStorage && window.localStorage.getItem(\"dl-main-text-theme\")) || \"starsea\";\n    } catch (_) {\n      saved = \"starsea\";\n    }\n    const theme = themes.has(saved) ? saved : \"starsea\";\n    window.__dlMainTextTheme = theme;\n    document.documentElement.style.colorScheme = theme.includes(\"night\") || theme === \"starsea\" ? \"dark\" : \"light\";\n  })();\n\u003c/script>\n\u003cscript>\n  window.dmtEnsureMainTextBootstrap = window.dmtEnsureMainTextBootstrap || function(anchor) {\n    var root = anchor && anchor.closest && anchor.closest('[data-main-text-root]');\n    var code = null;\n    if (root) {\n      if (!root.dataset.dmtInstanceId) {\n        window.__dmtMainTextInstanceSeq = (window.__dmtMainTextInstanceSeq || 0) + 1;\n        root.dataset.dmtInstanceId = 'dmt-' + window.__dmtMainTextInstanceSeq;\n      }\n      var cursor = root;\n      while (!code && cursor && cursor.nextElementSibling) {\n        cursor = cursor.nextElementSibling;\n        if (cursor.matches && cursor.matches('[data-dmt-bootstrap-code]')) code = cursor;\n        if (cursor.matches && cursor.matches('[data-main-text-root]')) break;\n      }\n    }\n    if (!code && anchor && anchor.matches && anchor.matches('[data-dmt-bootstrap-code]')) code = anchor;\n    if (!code && anchor && anchor.previousElementSibling && anchor.previousElementSibling.matches && anchor.previousElementSibling.matches('[data-dmt-bootstrap-code]')) code = anchor.previousElementSibling;\n    if (!code) code = document.querySelector('[data-dmt-bootstrap-code]');\n    if (!code || code.dataset.dmtBootstrapped === '1') return;\n    code.dataset.dmtBootstrapped = '1';\n    var script = document.createElement('script');\n    if (root && root.dataset.dmtInstanceId) script.setAttribute('data-dmt-target-root', root.dataset.dmtInstanceId);\n    script.text = decodeURIComponent(escape(atob(code.value || code.textContent || '')));\n    document.body.appendChild(script);\n  };\n\u003c/script>\n\u003c!-- BUILD:CSS -->\n\u003c/head>\n\u003cbody class=\"dmt-preload\" data-theme=\"starsea\">\n\u003cscript>\n  document.body.setAttribute(\"data-theme\", window.__dlMainTextTheme || \"starsea\");\n\u003c/script>\n\n\u003cdiv class=\"dmt-root\" data-root data-main-text-root>\n  \u003cheader class=\"dmt-topbar\">\n    \u003cdiv class=\"dmt-brandmark\" aria-hidden=\"true\">\u003c/div>\n    \u003cdiv class=\"dmt-title\">\n      \u003ch1>斗罗纪行\u003c/h1>\n      \u003cspan>Soul Land Chronicle\u003c/span>\n    \u003c/div>\n    \u003cdiv class=\"dmt-topbar-actions\">\n      \u003cdiv class=\"dmt-theme-selector dmt-theme-selector--topbar\" aria-label=\"外观模式\">\n        \u003cbutton type=\"button\" data-theme-key=\"starsea\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'starsea');\">星海\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"starsea-night\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'starsea-night');\">星夜\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"paper\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'paper');\">米黄\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"paper-night\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'paper-night');\">墨纸\u003c/button>\n      \u003c/div>\n      \u003cbutton class=\"dmt-icon-btn\" type=\"button\" data-settings-toggle title=\"设置\" aria-label=\"设置\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);var r=this.closest('[data-main-text-root]');var p=r&&r.querySelector('[data-settings-panel]');if(p)p.classList.toggle('is-open');\">\n        \u003csvg viewBox=\"0 0 24 24\" aria-hidden=\"true\">\n          \u003cpath d=\"M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.73 8.87c-.11.21-.07.47.12.61l2.03 1.58c-.04.3-.07.63-.07.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .43-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.49-.12-.61l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8a3.6 3.6 0 0 1 0 7.2Z\"/>\n        \u003c/svg>\n      \u003c/button>\n    \u003c/div>\n  \u003c/header>\n\n  \u003caside class=\"dmt-settings\" data-settings-panel aria-label=\"正文设置\">\n    \u003csection class=\"dmt-setting-row\">\n      \u003clabel class=\"dmt-setting-label\" for=\"dmt-font-select\">正文字体\u003c/label>\n      \u003cselect id=\"dmt-font-select\" data-font-select onchange=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyFont&&window.dmtApplyFont(this,this.value);\">\n        \u003coption value=\"theme\">跟随主题\u003c/option>\n        \u003coption value=\"serif\">思源宋体\u003c/option>\n        \u003coption value=\"sans\">思源黑体\u003c/option>\n        \u003coption value=\"yahei\">微软雅黑\u003c/option>\n        \u003coption value=\"songti\">宋体\u003c/option>\n        \u003coption value=\"kaiti\">楷体\u003c/option>\n        \u003coption value=\"fangsong\">仿宋\u003c/option>\n      \u003c/select>\n    \u003c/section>\n\n    \u003csection class=\"dmt-setting-row\">\n      \u003cdiv class=\"dmt-setting-label\">正文字号\u003c/div>\n      \u003cdiv class=\"dmt-stepper\">\n        \u003cbutton type=\"button\" data-font-dec onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustFontSize&&window.dmtAdjustFontSize(this,-1);\">-\u003c/button>\n        \u003coutput data-font-size>18\u003c/output>\n        \u003cbutton type=\"button\" data-font-inc onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustFontSize&&window.dmtAdjustFontSize(this,1);\">+\u003c/button>\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-setting-row\">\n      \u003cdiv class=\"dmt-setting-label\">对白字号\u003c/div>\n      \u003cdiv class=\"dmt-stepper\">\n        \u003cbutton type=\"button\" data-dialogue-dec onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustDialogueSize&&window.dmtAdjustDialogueSize(this,-1);\">-\u003c/button>\n        \u003coutput data-dialogue-size>16\u003c/output>\n        \u003cbutton type=\"button\" data-dialogue-inc onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustDialogueSize&&window.dmtAdjustDialogueSize(this,1);\">+\u003c/button>\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-user-panel\">\n      \u003cdiv class=\"dmt-setting-label\">玩家头像\u003c/div>\n      \u003cdiv class=\"dmt-user-avatar-row\">\n        \u003cspan class=\"dmt-user-avatar-preview\" data-user-avatar-preview>玩\u003c/span>\n        \u003cbutton type=\"button\" data-user-avatar-upload onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtUploadUserAvatar&&window.dmtUploadUserAvatar(this);\">上传玩家头像\u003c/button>\n        \u003cbutton type=\"button\" data-user-avatar-clear onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtClearUserAvatar&&window.dmtClearUserAvatar(this);\">使用角色创建头像\u003c/button>\n        \u003cinput type=\"file\" data-user-avatar-file accept=\"image/*\" hidden />\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-character-panel\">\n      \u003cdiv class=\"dmt-setting-label\">自定义角色\u003c/div>\n      \u003cdiv class=\"dmt-character-list\" data-character-list>\u003c/div>\n      \u003cdiv class=\"dmt-character-form\">\n        \u003cinput type=\"text\" data-character-name placeholder=\"角色名称\" maxlength=\"32\" />\n        \u003cinput type=\"color\" data-character-color value=\"#e8c36c\" title=\"角色颜色\" />\n        \u003cbutton type=\"button\" data-character-upload onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtUploadCharacterAvatar&&window.dmtUploadCharacterAvatar(this);\">上传角色头像\u003c/button>\n        \u003cinput type=\"file\" data-character-file accept=\"image/*\" hidden />\n        \u003cimg data-character-preview alt=\"角色头像预览\" />\n        \u003cbutton type=\"button\" data-character-save onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtSaveCustomCharacter&&window.dmtSaveCustomCharacter(this);\">保存角色\u003c/button>\n      \u003c/div>\n    \u003c/section>\n  \u003c/aside>\n\n  \u003cmain class=\"dmt-reader\">\n    \u003carticle class=\"dmt-content\" id=\"readingContent\" data-content>\n\u003ctemplate data-raw-content>\n$1\n\u003c/template>\n    \u003c/article>\n  \u003c/main>\n\n  \u003cdiv class=\"dmt-modal\" data-image-modal hidden>\n    \u003cbutton type=\"button\" class=\"dmt-modal-close\" data-modal-close aria-label=\"关闭预览\">x\u003c/button>\n    \u003cimg data-modal-image alt=\"放大预览\" />\n  \u003c/div>\n  \u003cdiv class=\"dmt-toast\" data-toast role=\"status\" aria-live=\"polite\">\u003c/div>\n\u003c/div>\n\n\u003c!-- BUILD:JS -->\n\u003c/body>\n\u003c/html>\n";
@@ -118,6 +118,24 @@
   const MAIN_TEXT_STREAM_CLEAR_GRACE_MS = 1800;
   const MAIN_TEXT_STREAM_MARKER_GRACE_MS = 8000;
   const MAIN_TEXT_STREAM_PRESERVE_RAW = "__douluo_main_text_stream_preserve__";
+  const CHAT_LIFECYCLE_EVENT_KEYS = [
+    "CHAT_CHANGED",
+    "CHARACTER_FIRST_MESSAGE_SELECTED",
+    "USER_MESSAGE_RENDERED",
+    "CHARACTER_MESSAGE_RENDERED",
+    "MESSAGE_UPDATED",
+    "MESSAGE_SWIPED",
+  ];
+  const CHAT_LIFECYCLE_EVENT_NAMES = [
+    "chat_id_changed",
+    "character_first_message_selected",
+    "user_message_rendered",
+    "character_message_rendered",
+    "message_updated",
+    "message_swiped",
+  ];
+  const CHAT_LIFECYCLE_SCAN_DELAYS = [0, 80, 240, 750, 1600];
+  const CHAT_SIGNATURE_POLL_MS = 1000;
   const loadedAt = new Date().toISOString();
 
   const state = {
@@ -155,6 +173,15 @@
     lastMainTextStreamReason: "",
     lastMainTextStreamAt: 0,
     mainTextStreamPreserveCount: 0,
+    lifecycleSubscriptions: [],
+    lifecycleEventCount: 0,
+    lastLifecycleEvent: "",
+    lastLifecycleAt: 0,
+    lastLifecycleScanReason: "",
+    lastChatSignature: "",
+    chatSignaturePollTimer: 0,
+    chatSignatureChangeCount: 0,
+    observerRetargetCount: 0,
   };
 
   const doneAttr = `dlou${toDatasetToken(MODULE_KIND)}Mounted`;
@@ -1467,19 +1494,34 @@
     nodes.forEach((node) => processCandidate(node));
   }
 
-  function isObservedDocument(targetDocument) {
-    return state.observers.some((entry) => entry.document === targetDocument);
+  function observedEntryForDocument(targetDocument) {
+    return state.observers.find((entry) => entry.document === targetDocument) || null;
+  }
+
+  function removeObserverEntry(entry) {
+    if (!entry) return;
+    try {
+      entry.observer.disconnect();
+    } catch (_) {}
+    const index = state.observers.indexOf(entry);
+    if (index >= 0) state.observers.splice(index, 1);
   }
 
   function startObserver() {
     const docs = hostDocuments();
     docs.forEach((entry) => {
       const doc = entry.document;
-      if (!doc || isObservedDocument(doc)) return;
+      if (!doc) return;
       const target = doc.body || doc.documentElement;
       if (!target) return;
       const Observer = (entry.window && entry.window.MutationObserver) || window.MutationObserver;
       if (typeof Observer !== "function") return;
+      const existing = observedEntryForDocument(doc);
+      if (existing && existing.target === target) return;
+      if (existing) {
+        removeObserverEntry(existing);
+        state.observerRetargetCount += 1;
+      }
       const observer = new Observer((mutations) => {
         mutations.forEach((mutation) => {
           enqueue(mutation.target);
@@ -1493,10 +1535,160 @@
         });
       });
       observer.observe(target, { childList: true, subtree: true, characterData: true });
-      state.observers.push({ label: entry.label, document: doc, observer });
+      state.observers.push({ label: entry.label, document: doc, target, observer });
     });
     state.observed = state.observers.length > 0;
     state.observedDocuments = state.observers.map((entry) => entry.label);
+  }
+
+  function sillyContext(host) {
+    try {
+      return host && host.SillyTavern && typeof host.SillyTavern.getContext === "function"
+        ? host.SillyTavern.getContext()
+        : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function lifecycleEventRecord(entry) {
+    const host = entry && entry.host;
+    const context = sillyContext(host);
+    const eventSource = (context && context.eventSource) || (host && host.eventSource) || null;
+    const eventTypes = (context && context.eventTypes) || (host && (host.eventTypes || host.event_types)) || {};
+    return { label: entry.label, eventSource, eventTypes };
+  }
+
+  function lifecycleEventNames(eventTypes, key, index) {
+    const names = new Set();
+    try {
+      if (eventTypes && typeof eventTypes[key] === "string") names.add(eventTypes[key]);
+    } catch (_) {}
+    names.add(CHAT_LIFECYCLE_EVENT_NAMES[index]);
+    names.add(key);
+    return Array.from(names).filter(Boolean);
+  }
+
+  function hasLifecycleSubscription(source, eventName) {
+    return state.lifecycleSubscriptions.some((item) => item.source === source && item.eventName === eventName);
+  }
+
+  function addLifecycleSubscription(source, eventName, listener, label) {
+    if (!source || !eventName || hasLifecycleSubscription(source, eventName)) return false;
+    try {
+      if (typeof source.on === "function") {
+        source.on(eventName, listener);
+      } else if (typeof source.addEventListener === "function") {
+        source.addEventListener(eventName, listener);
+      } else {
+        return false;
+      }
+      state.lifecycleSubscriptions.push({ source, eventName, listener, label });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function scheduleLifecycleScans(reason) {
+    const label = reason || "chat-lifecycle";
+    state.lifecycleEventCount += 1;
+    state.lastLifecycleEvent = label;
+    state.lastLifecycleAt = Date.now();
+    state.lastLifecycleScanReason = label;
+    CHAT_LIFECYCLE_SCAN_DELAYS.forEach((delay) => {
+      window.setTimeout(() => {
+        startObserver();
+        scanNew({ includeExisting: true });
+      }, delay);
+    });
+  }
+
+  function subscribeChatLifecycleEvents() {
+    hostWindowEntries().forEach((entry) => {
+      const record = lifecycleEventRecord(entry);
+      const source = record.eventSource;
+      if (!source) return;
+      CHAT_LIFECYCLE_EVENT_KEYS.forEach((key, index) => {
+        lifecycleEventNames(record.eventTypes, key, index).forEach((eventName) => {
+          addLifecycleSubscription(
+            source,
+            eventName,
+            () => scheduleLifecycleScans(`${entry.label}:${eventName}`),
+            entry.label
+          );
+        });
+      });
+    });
+  }
+
+  function firstString(values) {
+    for (const value of values) {
+      if (value == null) continue;
+      const text = String(value);
+      if (text) return text;
+    }
+    return "";
+  }
+
+  function chatSignatureForHost(entry) {
+    const host = entry && entry.host;
+    const context = sillyContext(host);
+    const helper = host && host.TavernHelper;
+    const chatId = context
+      ? firstString([
+          context.chatId,
+          context.chat_id,
+          context.chatFile,
+          context.chat_file,
+          context.chat_filename,
+          context.chatFileName,
+          context.characterId,
+          context.character_id,
+        ])
+      : "";
+    const chatLength = context && Array.isArray(context.chat) ? String(context.chat.length) : "";
+    let lastId = "";
+    let currentId = "";
+    try {
+      if (helper && typeof helper.getLastMessageId === "function") lastId = String(helper.getLastMessageId());
+    } catch (_) {}
+    try {
+      if (helper && typeof helper.getCurrentMessageId === "function") currentId = String(helper.getCurrentMessageId());
+    } catch (_) {}
+    return [entry.label, chatId, chatLength, lastId, currentId].join(":");
+  }
+
+  function currentChatSignature() {
+    const entries = hostWindowEntries();
+    return entries.map((entry) => chatSignatureForHost(entry)).join("|");
+  }
+
+  function checkChatSignature() {
+    const next = currentChatSignature();
+    if (!next) return;
+    if (state.lastChatSignature && next !== state.lastChatSignature) {
+      state.chatSignatureChangeCount += 1;
+      scheduleLifecycleScans("chat-signature-changed");
+    }
+    state.lastChatSignature = next;
+  }
+
+  function startChatSignaturePolling() {
+    if (state.chatSignaturePollTimer) return;
+    checkChatSignature();
+    const tick = () => {
+      state.chatSignaturePollTimer = 0;
+      subscribeChatLifecycleEvents();
+      checkChatSignature();
+      state.chatSignaturePollTimer = window.setTimeout(tick, CHAT_SIGNATURE_POLL_MS);
+    };
+    state.chatSignaturePollTimer = window.setTimeout(tick, CHAT_SIGNATURE_POLL_MS);
+  }
+
+  function startChatLifecycleRescans() {
+    subscribeChatLifecycleEvents();
+    startChatSignaturePolling();
   }
 
   function scheduleRecoveryScans() {
@@ -1561,6 +1753,14 @@
       foreignConflictCount: state.foreignConflictCount,
       lastForeignPlacement: state.lastForeignPlacement,
       lastForeignAt: state.lastForeignAt,
+      observerRetargetCount: state.observerRetargetCount,
+      lifecycleSubscriptionCount: state.lifecycleSubscriptions.length,
+      lifecycleEventCount: state.lifecycleEventCount,
+      lastLifecycleEvent: state.lastLifecycleEvent,
+      lastLifecycleAt: state.lastLifecycleAt,
+      lastLifecycleScanReason: state.lastLifecycleScanReason,
+      lastChatSignature: state.lastChatSignature,
+      chatSignatureChangeCount: state.chatSignatureChangeCount,
       lastMainTextStreamReason: state.lastMainTextStreamReason,
       lastMainTextStreamAt: state.lastMainTextStreamAt,
       mainTextStreamPreserveCount: state.mainTextStreamPreserveCount,
@@ -1586,12 +1786,14 @@
       "DOMContentLoaded",
       () => {
         startObserver();
+        startChatLifecycleRescans();
         scheduleRecoveryScans();
       },
       { once: true }
     );
   } else {
     startObserver();
+    startChatLifecycleRescans();
     scheduleRecoveryScans();
   }
 })();
