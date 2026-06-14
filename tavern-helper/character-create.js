@@ -49,6 +49,13 @@
     ".dls-root",
     ".dmt-root",
   ].join(",");
+  const UI_HELPER_ROOT_SELECTOR = [
+    "[data-cover-root]",
+    "[data-main-text-root]",
+    "[data-dlou-helper-root]",
+    ".ds8[data-root]",
+    ".dmt-root",
+  ].join(",");
   const IGNORED_TEXT_SELECTOR = [
     ROOT_SELECTOR_ALL,
     "[data-douluo-status-helper]",
@@ -534,20 +541,60 @@
     const out = [];
     if (!message) return out;
     if (typeof message === "string") return [message];
+
+    const activeSwipe = activeSwipeIndex(message);
+    if (activeSwipe >= 0 && Array.isArray(message.swipes)) {
+      pushVariant(out, message.swipes[activeSwipe]);
+      try {
+        pushVariant(out, message.swipe_info && message.swipe_info[activeSwipe]);
+      } catch (_) {}
+      if (out.length) return out;
+    }
+
+    pushMessageFields(out, message);
+
+    if (Array.isArray(message.swipes) && message.swipes.length === 1) {
+      pushVariant(out, message.swipes[0]);
+      try {
+        pushVariant(out, message.swipe_info && message.swipe_info[0]);
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  function pushMessageFields(out, message) {
+    if (!message || typeof message !== "object") return;
     ["mes", "message", "content", "text", "raw"].forEach((key) => {
       if (typeof message[key] === "string") out.push(message[key]);
     });
-    if (Array.isArray(message.swipes)) {
-      message.swipes.forEach((swipe, index) => {
-        if (typeof swipe === "string") out.push(swipe);
-        else messageTextVariants(swipe).forEach((value) => out.push(value));
-        try {
-          const info = message.swipe_info && message.swipe_info[index];
-          if (info) messageTextVariants(info).forEach((value) => out.push(value));
-        } catch (_) {}
-      });
+  }
+
+  function pushVariant(out, value) {
+    if (!value) return;
+    if (typeof value === "string") {
+      out.push(value);
+      return;
     }
-    return out;
+    messageTextVariants(value).forEach((item) => out.push(item));
+  }
+
+  function activeSwipeIndex(message) {
+    if (!message || typeof message !== "object" || !Array.isArray(message.swipes)) return -1;
+    const length = message.swipes.length;
+    const keys = ["swipe_id", "swipeId", "swipeIndex", "currentSwipe", "current_swipe"];
+    for (const key of keys) {
+      const index = normalizeSwipeIndex(message[key], length);
+      if (index >= 0) return index;
+    }
+    return -1;
+  }
+
+  function normalizeSwipeIndex(value, length) {
+    if (!Number.isFinite(Number(value)) || length <= 0) return -1;
+    const raw = Math.trunc(Number(value));
+    if (raw >= 0 && raw < length) return raw;
+    if (raw > 0 && raw - 1 < length) return raw - 1;
+    return -1;
   }
 
   function normalizeMessageText(message) {
@@ -686,8 +733,15 @@
     }
     const messageNode = findMessageNode(candidate) || candidate;
     const target = findContentContainer(candidate) || findContentContainer(messageNode) || messageNode;
-    if (!target || target.querySelector(`[data-dlou-helper-root="${MODULE_KIND}"]`)) {
+    const mountedRoot = findMountedUiRoot(target);
+    const mountedModule = mountedRoot && (mountedRoot.getAttribute("data-dlou-helper-root") || inferMountedModule(mountedRoot));
+    if (!target || mountedModule === MODULE_KIND) {
       state.lastSkipReason = "already-mounted";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
+      return false;
+    }
+    if (mountedRoot) {
+      state.lastSkipReason = "other-ui-mounted";
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
       return false;
     }
@@ -710,6 +764,20 @@
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, true));
     }
     return didMount;
+  }
+
+  function findMountedUiRoot(target) {
+    if (!target || target.nodeType !== Node.ELEMENT_NODE) return null;
+    if (target.matches && target.matches(UI_HELPER_ROOT_SELECTOR)) return target;
+    return target.querySelector ? target.querySelector(UI_HELPER_ROOT_SELECTOR) : null;
+  }
+
+  function inferMountedModule(root) {
+    if (!root || root.nodeType !== Node.ELEMENT_NODE) return "";
+    if (root.matches("[data-cover-root]")) return "cover";
+    if (root.matches("[data-main-text-root], .dmt-root")) return "main-text";
+    if (root.matches(".ds8[data-root]")) return "character-create";
+    return "";
   }
 
   function collectCandidates(root) {
