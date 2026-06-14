@@ -1,7 +1,7 @@
 // ==DouluoLockedRegex==
-// @name         [剧情推进]斗罗大陆 I-IV · Soul Land 前置审查面板 @0.6.1
+// @name         [剧情推进]斗罗大陆 I-IV · Soul Land 前置审查面板 @0.6
 // @module       plot-progress-beauty
-// @version      @0.6.1
+// @version      @0.6
 // @build        deterministic
 // @sourceHash   sha256:a584f07a0461ae19b6154773d4d78ce7c6e4e95afe5439c65e53d9d48e7041c7
 // ==/DouluoLockedRegex==

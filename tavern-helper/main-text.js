@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 正文阅读 @0.6.1
+// @name         [助手]斗罗大陆 I-IV · Soul Land 正文阅读 @0.6
 // @module       tavern-helper/main-text
-// @version      @0.6.1
+// @version      @0.6
 // @source       tavern-helper-scripts/main-text/dist/latest.json
 "use strict";
 
@@ -247,6 +247,22 @@
     }
   }
 
+  function relocateForeignHelpers(target) {
+    if (!target || target.nodeType !== Node.ELEMENT_NODE || !target.querySelectorAll) return 0;
+    const parent = target.parentNode;
+    if (!parent) return 0;
+    const nodes = Array.from(target.querySelectorAll(FOREIGN_HELPER_SELECTOR)).filter((node) => {
+      if (!node.parentNode || node === target) return false;
+      return !node.closest(UI_HELPER_ROOT_SELECTOR);
+    });
+    nodes.forEach((node) => {
+      try {
+        parent.insertBefore(node, target.nextSibling);
+      } catch (_) {}
+    });
+    return nodes.length;
+  }
+
   function clearMountState(target) {
     if (!target || !target.dataset) return;
     [
@@ -282,9 +298,7 @@
     if (target.dataset[doneAttr] === "1" && target.dataset[hashAttr] === hash) {
       return null;
     }
-    if (containsForeignHelperNode(target)) {
-      throw new Error("Refusing to clear target containing a foreign helper UI");
-    }
+    relocateForeignHelpers(target);
     clearElement(target);
     clearMountState(target);
     target.dataset[doneAttr] = "1";
@@ -973,11 +987,6 @@
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
       return false;
     }
-    if (containsForeignHelperNode(target)) {
-      state.lastSkipReason = "foreign-helper-in-target";
-      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
-      return false;
-    }
     const mountedRoot = findMountedUiRoot(target);
     const mountedModule = mountedRoot && (mountedRoot.getAttribute("data-dlou-helper-root") || inferMountedModule(mountedRoot));
     const rawInfo = readRawInfo(target, messageNode);
@@ -998,11 +1007,7 @@
           state.lastRawStrong = previousRawStrong;
           return false;
         }
-        if (containsForeignHelperNode(target)) {
-          state.lastSkipReason = "stale-module-foreign-helper-preserved";
-          rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
-          return false;
-        }
+        relocateForeignHelpers(target);
         clearElement(target);
         clearMountState(target);
         state.lastSkipReason = raw ? "stale-module-cleared" : "stale-module-empty-raw";
