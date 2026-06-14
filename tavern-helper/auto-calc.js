@@ -462,6 +462,26 @@
         return issues;
     }
 
+    function dataRowCount(db, tableName) {
+        return rows(db, tableName).filter(row => row && row.__rowIndex).length;
+    }
+
+    function hasCreationEvidence(db) {
+        if (rows(db, CONFIG.tables.notes).some(row => asText(cell(row, '编码索引')) === 'character-create')) return true;
+        if (dataRowCount(db, CONFIG.tables.soulOverview) > 0) return true;
+        if (CONFIG.tables.rings.some(tableName => dataRowCount(db, tableName) > 0)) return true;
+        return dataRowCount(db, CONFIG.tables.traitState) > 0;
+    }
+
+    function isUninitializedCoreTemplate(db) {
+        return SINGLETON_TABLES.every(tableName => dataRowCount(db, tableName) === 0)
+            && !hasCreationEvidence(db);
+    }
+
+    function shouldNotifyAwaitingInitialSeed(options = {}) {
+        return Boolean(options.notify || options.showToast);
+    }
+
     function verifyDerivedWrite(db, expectPlayer) {
         const issues = missingDerivedFields(firstRow(db, CONFIG.tables.stats), DERIVED_STATS_FIELDS)
             .map(field => `${CONFIG.tables.stats}.${field}`);
@@ -1482,9 +1502,22 @@
         return { changed: failed.length === 0, failed };
     }
 
+    async function repairMissingRuntimeSingletonRow(db, options = {}) {
+        const failed = [];
+        if (dataRowCount(db, CONFIG.tables.statsRuntime) > 0) return { changed: false, failed };
+        if (typeof api.insertRow !== 'function') return { changed: false, failed: [`${CONFIG.tables.statsRuntime}:singleton seed unavailable`] };
+
+        const result = await upsertFirstRow(CONFIG.tables.statsRuntime, null, runtimeRowDefaults(), options);
+        if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.statsRuntime}:singleton seed failed`);
+        return { changed: failed.length === 0, failed };
+    }
+
     async function repairSingletonTables(db, options = {}) {
         const failed = [];
         let changed = false;
+        const runtimeSeed = await repairMissingRuntimeSingletonRow(db, options);
+        failed.push(...runtimeSeed.failed);
+        changed = changed || runtimeSeed.changed;
         for (const tableName of SINGLETON_TABLES) {
             const result = await repairDuplicateSingletonRows(db, tableName, options);
             failed.push(...result.failed);
@@ -4407,6 +4440,13 @@
             console.warn(`[${SCRIPT_NAME}] ${readiness.message}`, readiness.missing);
             recalcToast(options, readiness.message, 'warning', 'severe');
             return { ok: false, reason: 'database template incomplete', missingTables: readiness.missing };
+        }
+
+        if (isUninitializedCoreTemplate(db)) {
+            const message = '等待建卡首行落库：核心唯一表当前只有表头，自动计算暂不重算。';
+            log(message);
+            if (shouldNotifyAwaitingInitialSeed(options)) recalcToast(options, message, 'info');
+            return { ok: true, skipped: true, reason: 'awaiting initial seed' };
         }
 
         isWriting = true;
