@@ -395,6 +395,11 @@
 
   function status() {
     const host = hostElement();
+    const foreignNodeCount = document.querySelectorAll(FOREIGN_HELPER_SELECTOR).length;
+    const chatContainer = findChatContainer();
+    const foreignAnchorCount = chatContainer
+      ? Array.from(chatContainer.children || []).filter((node) => !isInsideHost(node) && isForeignHelperNode(node)).length
+      : 0;
     return {
       version: VERSION,
       mounted: !!host,
@@ -402,7 +407,9 @@
       hasApp: !!(panelElement() && panelElement().__dlsStatusApp),
       mountTarget: host && host.dataset.mountTarget || "",
       mountMode: host && host.dataset.mountMode || "",
-      foreignVisualizerDetected: !!(host && host.dataset.foreignVisualizerDetected === "true"),
+      foreignVisualizerDetected: !!(host && host.dataset.foreignVisualizerDetected === "true") || foreignNodeCount > 0,
+      foreignNodeCount,
+      foreignAnchorCount,
     };
   }
 

@@ -52,8 +52,13 @@
     ".auto-card-updater-popup",
     "[id^='acu-']",
   ].join(",");
+  const FOREIGN_SHELF_ATTR = "data-dlou-foreign-shelf";
+  const FOREIGN_SHELF_SELECTOR = `[${FOREIGN_SHELF_ATTR}]`;
+  const FOREIGN_COMPAT_STYLE_ID = "douluo-foreign-helper-compat-style";
+  const FOREIGN_RELOCATE_MIN_INTERVAL_MS = 140;
   const ROOT_SELECTOR_ALL = [
     FOREIGN_HELPER_SELECTOR,
+    FOREIGN_SHELF_SELECTOR,
     "[data-cover-root]",
     "[data-main-text-root]",
     "[data-dlou-helper-root]",
@@ -132,6 +137,14 @@
     contextProbe: null,
     lastRawSource: "",
     lastRawStrong: false,
+    foreignVisualizerDetected: false,
+    foreignShelvedCount: 0,
+    foreignConflictCount: 0,
+    lastForeignPlacement: "",
+    lastForeignAt: 0,
+    lastForeignRelocateAt: 0,
+    foreignRelocateTimer: 0,
+    foreignRelocateQueue: new Set(),
   };
 
   const doneAttr = `dlou${toDatasetToken(MODULE_KIND)}Mounted`;
@@ -193,6 +206,43 @@
     (doc.head || doc.documentElement).appendChild(style);
   }
 
+  function ensureForeignHelperStyle(targetDocument = document) {
+    const doc = targetDocument || document;
+    if (doc.getElementById(FOREIGN_COMPAT_STYLE_ID)) return;
+    const style = doc.createElement("style");
+    style.id = FOREIGN_COMPAT_STYLE_ID;
+    style.textContent = `
+[${FOREIGN_SHELF_ATTR}] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 10px 0 0;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, .38);
+  opacity: .58;
+  filter: saturate(.72);
+  position: relative;
+  z-index: 0;
+  max-height: 180px;
+  overflow: auto;
+  clear: both;
+}
+[${FOREIGN_SHELF_ATTR}]:empty {
+  display: none;
+}
+[${FOREIGN_SHELF_ATTR}] .acu-wrapper,
+[${FOREIGN_SHELF_ATTR}] .acu-embedded-options-container,
+[${FOREIGN_SHELF_ATTR}] .acu-embedded-dashboard-container,
+[${FOREIGN_SHELF_ATTR}] [id^="acu-"] {
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+`;
+    (doc.head || doc.documentElement).appendChild(style);
+  }
+
   function runInlineApp(root, code, label) {
     const doc = ownerDocumentOf(root);
     const script = doc.createElement("script");
@@ -227,8 +277,19 @@
     while (element.firstChild) element.removeChild(element.firstChild);
   }
 
+  function isForeignShelfNode(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    try {
+      if (node.matches && node.matches(FOREIGN_SHELF_SELECTOR)) return true;
+      return !!(node.closest && node.closest(FOREIGN_SHELF_SELECTOR));
+    } catch (_) {
+      return false;
+    }
+  }
+
   function isForeignHelperNode(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    if (isForeignShelfNode(node)) return true;
     try {
       if (node.matches && node.matches(FOREIGN_HELPER_SELECTOR)) return true;
       return !!(node.closest && node.closest(FOREIGN_HELPER_SELECTOR));
@@ -247,20 +308,80 @@
     }
   }
 
-  function relocateForeignHelpers(target) {
-    if (!target || target.nodeType !== Node.ELEMENT_NODE || !target.querySelectorAll) return 0;
+  function foreignShelfFor(target) {
+    if (!target || target.nodeType !== Node.ELEMENT_NODE) return null;
     const parent = target.parentNode;
-    if (!parent) return 0;
+    if (!parent) return null;
+    ensureForeignHelperStyle(ownerDocumentOf(target));
+    let sibling = target.nextSibling;
+    while (sibling) {
+      if (
+        sibling.nodeType === Node.ELEMENT_NODE &&
+        sibling.matches &&
+        sibling.matches(FOREIGN_SHELF_SELECTOR) &&
+        sibling.dataset.dlouForeignOwner === MODULE_KIND
+      ) {
+        return sibling;
+      }
+      if (sibling.nodeType === Node.ELEMENT_NODE && !isForeignShelfNode(sibling)) break;
+      sibling = sibling.nextSibling;
+    }
+    const shelf = ownerDocumentOf(target).createElement("div");
+    shelf.className = "dlou-foreign-helper-shelf";
+    shelf.setAttribute(FOREIGN_SHELF_ATTR, "");
+    shelf.dataset.dlouForeignOwner = MODULE_KIND;
+    shelf.dataset.dlouForeignTarget = nodePath(target).slice(0, 180);
+    parent.insertBefore(shelf, target.nextSibling);
+    return shelf;
+  }
+
+  function queueForeignRelocation(target) {
+    if (!target || target.nodeType !== Node.ELEMENT_NODE) return;
+    state.foreignRelocateQueue.add(target);
+    if (state.foreignRelocateTimer) return;
+    const now = Date.now();
+    const wait = Math.max(FOREIGN_RELOCATE_MIN_INTERVAL_MS - (now - state.lastForeignRelocateAt), 0);
+    state.foreignRelocateTimer = window.setTimeout(() => {
+      state.foreignRelocateTimer = 0;
+      const queued = Array.from(state.foreignRelocateQueue);
+      state.foreignRelocateQueue.clear();
+      queued.forEach((node) => relocateForeignHelpers(node, { force: true }));
+    }, wait);
+  }
+
+  function relocateForeignHelpers(target, options = {}) {
+    if (!target || target.nodeType !== Node.ELEMENT_NODE || !target.querySelectorAll) return 0;
+    const now = Date.now();
+    if (!options.force && now - state.lastForeignRelocateAt < FOREIGN_RELOCATE_MIN_INTERVAL_MS) {
+      queueForeignRelocation(target);
+      return 0;
+    }
     const nodes = Array.from(target.querySelectorAll(FOREIGN_HELPER_SELECTOR)).filter((node) => {
       if (!node.parentNode || node === target) return false;
+      if (isForeignShelfNode(node)) return false;
       return !node.closest(UI_HELPER_ROOT_SELECTOR);
     });
+    if (!nodes.length) return 0;
+    const shelf = foreignShelfFor(target);
+    if (!shelf) return 0;
+    let moved = 0;
     nodes.forEach((node) => {
       try {
-        parent.insertBefore(node, target.nextSibling);
+        if (isForeignShelfNode(node)) return;
+        node.setAttribute("data-dlou-foreign-shelved", MODULE_KIND);
+        shelf.appendChild(node);
+        moved += 1;
       } catch (_) {}
     });
-    return nodes.length;
+    if (moved) {
+      state.foreignVisualizerDetected = true;
+      state.foreignShelvedCount += moved;
+      state.foreignConflictCount += 1;
+      state.lastForeignPlacement = nodePath(target);
+      state.lastForeignAt = now;
+      state.lastForeignRelocateAt = now;
+    }
+    return moved;
   }
 
   function clearMountState(target) {
@@ -298,7 +419,7 @@
     if (target.dataset[doneAttr] === "1" && target.dataset[hashAttr] === hash) {
       return null;
     }
-    relocateForeignHelpers(target);
+    relocateForeignHelpers(target, { force: true });
     clearElement(target);
     clearMountState(target);
     target.dataset[doneAttr] = "1";
@@ -987,6 +1108,9 @@
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
       return false;
     }
+    if (containsForeignHelperNode(target)) {
+      relocateForeignHelpers(target);
+    }
     const mountedRoot = findMountedUiRoot(target);
     const mountedModule = mountedRoot && (mountedRoot.getAttribute("data-dlou-helper-root") || inferMountedModule(mountedRoot));
     const rawInfo = readRawInfo(target, messageNode);
@@ -1007,7 +1131,7 @@
           state.lastRawStrong = previousRawStrong;
           return false;
         }
-        relocateForeignHelpers(target);
+        relocateForeignHelpers(target, { force: true });
         clearElement(target);
         clearMountState(target);
         state.lastSkipReason = raw ? "stale-module-cleared" : "stale-module-empty-raw";
@@ -1210,8 +1334,20 @@
     });
   }
 
+  function queryHostCount(selector) {
+    let count = 0;
+    hostDocuments().forEach((entry) => {
+      try {
+        count += entry.document.querySelectorAll(selector).length;
+      } catch (_) {}
+    });
+    return count;
+  }
+
   function status() {
     const meta = lockedMeta();
+    const foreignNodeCount = queryHostCount(FOREIGN_HELPER_SELECTOR);
+    const foreignShelfCount = queryHostCount(FOREIGN_SHELF_SELECTOR);
     return {
       script: SCRIPT_NAME,
       version: VERSION,
@@ -1244,6 +1380,13 @@
       mountAttempts: state.mountAttempts,
       candidateSamples: state.candidateSamples.slice(),
       scanRuns: state.scanRuns,
+      foreignVisualizerDetected: state.foreignVisualizerDetected || foreignNodeCount > 0,
+      foreignNodeCount,
+      foreignShelfCount,
+      foreignShelvedCount: state.foreignShelvedCount,
+      foreignConflictCount: state.foreignConflictCount,
+      lastForeignPlacement: state.lastForeignPlacement,
+      lastForeignAt: state.lastForeignAt,
     };
   }
 
