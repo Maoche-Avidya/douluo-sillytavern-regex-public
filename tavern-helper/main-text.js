@@ -12,6 +12,7 @@
   const MODULE_KIND = "main-text";
   const API_NAME = "DouLuoMainTextHelper";
   const MARK_TEXT = null;
+  const BUILD_ID = "main-text@0.6.0+b7ddd2d83d2b";
   const STYLE_ID = "douluo-main-text-helper-style";
   const ROOT_SELECTOR = "[data-main-text-root]";
   const HTML = "\u003c!DOCTYPE html>\n\u003chtml lang=\"zh-CN\">\n\u003chead>\n\u003cmeta charset=\"UTF-8\" />\n\u003cmeta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n\u003ctitle>斗罗正文阅读\u003c/title>\n\u003clink rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n\u003clink rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n\u003clink href=\"https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&display=swap\" rel=\"stylesheet\" />\n\u003cscript>\n  (() => {\n    const themes = new Set([\"starsea\", \"starsea-night\", \"paper\", \"paper-night\"]);\n    let saved = \"starsea\";\n    try {\n      saved = (window.localStorage && window.localStorage.getItem(\"dl-main-text-theme\")) || \"starsea\";\n    } catch (_) {\n      saved = \"starsea\";\n    }\n    const theme = themes.has(saved) ? saved : \"starsea\";\n    window.__dlMainTextTheme = theme;\n    document.documentElement.style.colorScheme = theme.includes(\"night\") || theme === \"starsea\" ? \"dark\" : \"light\";\n  })();\n\u003c/script>\n\u003cscript>\n  window.dmtEnsureMainTextBootstrap = window.dmtEnsureMainTextBootstrap || function(anchor) {\n    var root = anchor && anchor.closest && anchor.closest('[data-main-text-root]');\n    var code = null;\n    if (root) {\n      if (!root.dataset.dmtInstanceId) {\n        window.__dmtMainTextInstanceSeq = (window.__dmtMainTextInstanceSeq || 0) + 1;\n        root.dataset.dmtInstanceId = 'dmt-' + window.__dmtMainTextInstanceSeq;\n      }\n      var cursor = root;\n      while (!code && cursor && cursor.nextElementSibling) {\n        cursor = cursor.nextElementSibling;\n        if (cursor.matches && cursor.matches('[data-dmt-bootstrap-code]')) code = cursor;\n        if (cursor.matches && cursor.matches('[data-main-text-root]')) break;\n      }\n    }\n    if (!code && anchor && anchor.matches && anchor.matches('[data-dmt-bootstrap-code]')) code = anchor;\n    if (!code && anchor && anchor.previousElementSibling && anchor.previousElementSibling.matches && anchor.previousElementSibling.matches('[data-dmt-bootstrap-code]')) code = anchor.previousElementSibling;\n    if (!code) code = document.querySelector('[data-dmt-bootstrap-code]');\n    if (!code || code.dataset.dmtBootstrapped === '1') return;\n    code.dataset.dmtBootstrapped = '1';\n    var script = document.createElement('script');\n    if (root && root.dataset.dmtInstanceId) script.setAttribute('data-dmt-target-root', root.dataset.dmtInstanceId);\n    script.text = decodeURIComponent(escape(atob(code.value || code.textContent || '')));\n    document.body.appendChild(script);\n  };\n\u003c/script>\n\u003c!-- BUILD:CSS -->\n\u003c/head>\n\u003cbody class=\"dmt-preload\" data-theme=\"starsea\">\n\u003cscript>\n  document.body.setAttribute(\"data-theme\", window.__dlMainTextTheme || \"starsea\");\n\u003c/script>\n\n\u003cdiv class=\"dmt-root\" data-root data-main-text-root>\n  \u003cheader class=\"dmt-topbar\">\n    \u003cdiv class=\"dmt-brandmark\" aria-hidden=\"true\">\u003c/div>\n    \u003cdiv class=\"dmt-title\">\n      \u003ch1>斗罗纪行\u003c/h1>\n      \u003cspan>Soul Land Chronicle\u003c/span>\n    \u003c/div>\n    \u003cdiv class=\"dmt-topbar-actions\">\n      \u003cdiv class=\"dmt-theme-selector dmt-theme-selector--topbar\" aria-label=\"外观模式\">\n        \u003cbutton type=\"button\" data-theme-key=\"starsea\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'starsea');\">星海\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"starsea-night\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'starsea-night');\">星夜\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"paper\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'paper');\">米黄\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"paper-night\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'paper-night');\">墨纸\u003c/button>\n      \u003c/div>\n      \u003cbutton class=\"dmt-icon-btn\" type=\"button\" data-settings-toggle title=\"设置\" aria-label=\"设置\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);var r=this.closest('[data-main-text-root]');var p=r&&r.querySelector('[data-settings-panel]');if(p)p.classList.toggle('is-open');\">\n        \u003csvg viewBox=\"0 0 24 24\" aria-hidden=\"true\">\n          \u003cpath d=\"M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.73 8.87c-.11.21-.07.47.12.61l2.03 1.58c-.04.3-.07.63-.07.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .43-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.49-.12-.61l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8a3.6 3.6 0 0 1 0 7.2Z\"/>\n        \u003c/svg>\n      \u003c/button>\n    \u003c/div>\n  \u003c/header>\n\n  \u003caside class=\"dmt-settings\" data-settings-panel aria-label=\"正文设置\">\n    \u003csection class=\"dmt-setting-row\">\n      \u003clabel class=\"dmt-setting-label\" for=\"dmt-font-select\">正文字体\u003c/label>\n      \u003cselect id=\"dmt-font-select\" data-font-select onchange=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyFont&&window.dmtApplyFont(this,this.value);\">\n        \u003coption value=\"theme\">跟随主题\u003c/option>\n        \u003coption value=\"serif\">思源宋体\u003c/option>\n        \u003coption value=\"sans\">思源黑体\u003c/option>\n        \u003coption value=\"yahei\">微软雅黑\u003c/option>\n        \u003coption value=\"songti\">宋体\u003c/option>\n        \u003coption value=\"kaiti\">楷体\u003c/option>\n        \u003coption value=\"fangsong\">仿宋\u003c/option>\n      \u003c/select>\n    \u003c/section>\n\n    \u003csection class=\"dmt-setting-row\">\n      \u003cdiv class=\"dmt-setting-label\">正文字号\u003c/div>\n      \u003cdiv class=\"dmt-stepper\">\n        \u003cbutton type=\"button\" data-font-dec onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustFontSize&&window.dmtAdjustFontSize(this,-1);\">-\u003c/button>\n        \u003coutput data-font-size>18\u003c/output>\n        \u003cbutton type=\"button\" data-font-inc onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustFontSize&&window.dmtAdjustFontSize(this,1);\">+\u003c/button>\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-setting-row\">\n      \u003cdiv class=\"dmt-setting-label\">对白字号\u003c/div>\n      \u003cdiv class=\"dmt-stepper\">\n        \u003cbutton type=\"button\" data-dialogue-dec onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustDialogueSize&&window.dmtAdjustDialogueSize(this,-1);\">-\u003c/button>\n        \u003coutput data-dialogue-size>16\u003c/output>\n        \u003cbutton type=\"button\" data-dialogue-inc onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustDialogueSize&&window.dmtAdjustDialogueSize(this,1);\">+\u003c/button>\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-user-panel\">\n      \u003cdiv class=\"dmt-setting-label\">玩家头像\u003c/div>\n      \u003cdiv class=\"dmt-user-avatar-row\">\n        \u003cspan class=\"dmt-user-avatar-preview\" data-user-avatar-preview>玩\u003c/span>\n        \u003cbutton type=\"button\" data-user-avatar-upload onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtUploadUserAvatar&&window.dmtUploadUserAvatar(this);\">上传玩家头像\u003c/button>\n        \u003cbutton type=\"button\" data-user-avatar-clear onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtClearUserAvatar&&window.dmtClearUserAvatar(this);\">使用角色创建头像\u003c/button>\n        \u003cinput type=\"file\" data-user-avatar-file accept=\"image/*\" hidden />\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-character-panel\">\n      \u003cdiv class=\"dmt-setting-label\">自定义角色\u003c/div>\n      \u003cdiv class=\"dmt-character-list\" data-character-list>\u003c/div>\n      \u003cdiv class=\"dmt-character-form\">\n        \u003cinput type=\"text\" data-character-name placeholder=\"角色名称\" maxlength=\"32\" />\n        \u003cinput type=\"color\" data-character-color value=\"#e8c36c\" title=\"角色颜色\" />\n        \u003cbutton type=\"button\" data-character-upload onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtUploadCharacterAvatar&&window.dmtUploadCharacterAvatar(this);\">上传角色头像\u003c/button>\n        \u003cinput type=\"file\" data-character-file accept=\"image/*\" hidden />\n        \u003cimg data-character-preview alt=\"角色头像预览\" />\n        \u003cbutton type=\"button\" data-character-save onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtSaveCustomCharacter&&window.dmtSaveCustomCharacter(this);\">保存角色\u003c/button>\n      \u003c/div>\n    \u003c/section>\n  \u003c/aside>\n\n  \u003cmain class=\"dmt-reader\">\n    \u003carticle class=\"dmt-content\" id=\"readingContent\" data-content>\n\u003ctemplate data-raw-content>\n$1\n\u003c/template>\n    \u003c/article>\n  \u003c/main>\n\n  \u003cdiv class=\"dmt-modal\" data-image-modal hidden>\n    \u003cbutton type=\"button\" class=\"dmt-modal-close\" data-modal-close aria-label=\"关闭预览\">x\u003c/button>\n    \u003cimg data-modal-image alt=\"放大预览\" />\n  \u003c/div>\n  \u003cdiv class=\"dmt-toast\" data-toast role=\"status\" aria-live=\"polite\">\u003c/div>\n\u003c/div>\n\n\u003c!-- BUILD:JS -->\n\u003c/body>\n\u003c/html>\n";
@@ -39,19 +40,18 @@
   ].join(",");
   const ROOT_SELECTOR_ALL = [
     "[data-cover-root]",
-    "[data-root]",
     "[data-main-text-root]",
     "[data-dlou-helper-root]",
-  ].join(",");
-  const IGNORED_TEXT_SELECTOR = [
-    ROOT_SELECTOR_ALL,
     "[data-dls-root]",
-    "[data-douluo-status-helper]",
+    ".ds8[data-root]",
     ".dls-status-helper-host",
     ".dls-status-helper-panel",
     ".dls-root",
     ".dmt-root",
-    ".ds8",
+  ].join(",");
+  const IGNORED_TEXT_SELECTOR = [
+    ROOT_SELECTOR_ALL,
+    "[data-douluo-status-helper]",
     "button",
     "input",
     "select",
@@ -84,6 +84,7 @@
     "[contenteditable='true']",
   ].join(",");
   const MAIN_TEXT_RE = /^(?![\s\S]*<[a-z][\w:-]*(?:\s+[^<>]*)?\s+data-dl(?:s|github)-root\b)[\s\S]*?((?:<content\b[^>]*>[\s\S]*?<\/content>\s*)+)[\s\S]*$/;
+  const loadedAt = new Date().toISOString();
 
   const state = {
     mounted: 0,
@@ -96,6 +97,9 @@
     lastRawPreview: "",
     lastSkipReason: "",
     lastMatched: "",
+    lastErrorStack: "",
+    candidateSamples: [],
+    mountAttempts: 0,
     scanRuns: 0,
     reportedNoMatch: false,
   };
@@ -111,20 +115,21 @@
 
   function notify(message, type = "info") {
     try {
-      const detail = { module: MODULE_KIND, script: SCRIPT_NAME, message, type };
+      const detail = { module: MODULE_KIND, script: SCRIPT_NAME, buildId: BUILD_ID, message, type };
       document.dispatchEvent(new CustomEvent("douluo:ui-helper-status", { detail }));
     } catch (_) {
       // SillyTavern may run helpers in constrained iframes; status is optional.
     }
     const method = type === "error" ? "warn" : "log";
     try {
-      console[method](`[${SCRIPT_NAME}] ${message}`);
+      console[method](`[Douluo UI Helper][${MODULE_KIND}][${BUILD_ID}] ${message}`);
     } catch (_) {}
   }
 
   function rememberError(error, label) {
     const text = error && error.message ? error.message : String(error || "Unknown error");
     state.lastError = `${label}: ${text}`;
+    state.lastErrorStack = error && error.stack ? String(error.stack) : state.lastError;
     notify(state.lastError, "error");
   }
 
@@ -438,6 +443,77 @@
     return "";
   }
 
+  function hostWindows() {
+    const out = [window];
+    try {
+      if (window.parent && window.parent !== window) out.push(window.parent);
+    } catch (_) {}
+    try {
+      if (window.top && !out.includes(window.top)) out.push(window.top);
+    } catch (_) {}
+    return out;
+  }
+
+  function pushMessage(out, message, source) {
+    if (!message) return;
+    out.push({ message, source });
+  }
+
+  function pushMessageList(out, messages, source) {
+    if (!messages) return;
+    if (!Array.isArray(messages)) {
+      pushMessage(out, messages, source);
+      return;
+    }
+    messages.forEach((message, index) => pushMessage(out, message, `${source}[${index}]`));
+  }
+
+  function getContextRecords(index) {
+    const out = [];
+    const ids = [];
+    if (Number.isFinite(index) && index >= 0) ids.push(index);
+    ids.push(0);
+    for (const host of hostWindows()) {
+      try {
+        const helper = host.TavernHelper;
+        if (helper && typeof helper.getCurrentMessageId === "function") {
+          const id = Number(helper.getCurrentMessageId());
+          if (Number.isFinite(id)) ids.push(id);
+        }
+      } catch (_) {}
+      try {
+        const helper = host.TavernHelper;
+        if (helper && typeof helper.getLastMessageId === "function") {
+          const id = Number(helper.getLastMessageId());
+          if (Number.isFinite(id)) ids.push(id);
+        }
+      } catch (_) {}
+    }
+
+    for (const host of hostWindows()) {
+      try {
+        const helper = host.TavernHelper;
+        if (helper && typeof helper.getChatMessages === "function") {
+          Array.from(new Set(ids)).forEach((id) => {
+            try {
+              pushMessageList(out, helper.getChatMessages(id, { include_swipes: true }) || [], `TavernHelper.getChatMessages(${id})`);
+            } catch (_) {}
+          });
+        }
+      } catch (_) {}
+      try {
+        const context =
+          host.SillyTavern && typeof host.SillyTavern.getContext === "function"
+            ? host.SillyTavern.getContext()
+            : null;
+        if (context && Array.isArray(context.chat)) {
+          pushMessageList(out, context.chat, "SillyTavern.context.chat");
+        }
+      } catch (_) {}
+    }
+    return out;
+  }
+
   function getContextChat() {
     try {
       if (window.TavernHelper && typeof window.TavernHelper.getChatMessages === "function") {
@@ -454,21 +530,41 @@
     return [];
   }
 
+  function messageTextVariants(message) {
+    const out = [];
+    if (!message) return out;
+    if (typeof message === "string") return [message];
+    ["mes", "message", "content", "text", "raw"].forEach((key) => {
+      if (typeof message[key] === "string") out.push(message[key]);
+    });
+    if (Array.isArray(message.swipes)) {
+      message.swipes.forEach((swipe, index) => {
+        if (typeof swipe === "string") out.push(swipe);
+        else messageTextVariants(swipe).forEach((value) => out.push(value));
+        try {
+          const info = message.swipe_info && message.swipe_info[index];
+          if (info) messageTextVariants(info).forEach((value) => out.push(value));
+        } catch (_) {}
+      });
+    }
+    return out;
+  }
+
   function normalizeMessageText(message) {
-    if (!message) return "";
-    if (typeof message === "string") return message;
-    return (
-      message.mes ||
-      message.message ||
-      message.content ||
-      message.text ||
-      message.raw ||
-      ""
-    );
+    const values = messageTextVariants(message);
+    return values.length ? values[0] : "";
   }
 
   function readRawFromContext(node) {
     const index = messageIndexFromNode(node);
+    const records = getContextRecords(index);
+    for (const record of records) {
+      const variants = messageTextVariants(record.message);
+      for (const value of variants) {
+        const preferred = normalizeRawForModule(preferModuleRaw(value, value));
+        if (detect(preferred)) return preferred;
+      }
+    }
     if (index < 0) return "";
     const chat = getContextChat();
     const message = chat[index];
@@ -483,27 +579,136 @@
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, 180);
   }
 
+  function lockedMeta() {
+    try {
+      const all = window.__DLOU_HELPER_LOCKED_META__;
+      return all && all[MODULE_KIND] && typeof all[MODULE_KIND] === "object" ? all[MODULE_KIND] : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function windowLocation() {
+    try {
+      return String(window.location && window.location.href ? window.location.href : "");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function nodeLabel(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    const parts = [node.tagName.toLowerCase()];
+    if (node.id) parts.push(`#${node.id}`);
+    if (node.classList && node.classList.length) {
+      parts.push(`.${Array.from(node.classList).slice(0, 4).join(".")}`);
+    }
+    ["mesid", "data-message-id", "data-mes-id", "data-index", "data-root", "data-dls-root", "data-dlou-helper-root"].forEach((attr) => {
+      const value = node.getAttribute && node.getAttribute(attr);
+      if (value != null) parts.push(value === "" ? `[${attr}]` : `[${attr}="${String(value).slice(0, 24)}"]`);
+    });
+    return parts.join("");
+  }
+
+  function nodePath(node) {
+    const parts = [];
+    let cursor = node && node.nodeType === Node.ELEMENT_NODE ? node : null;
+    while (cursor && parts.length < 6) {
+      parts.unshift(nodeLabel(cursor));
+      if (cursor.matches && cursor.matches(MESSAGE_SELECTOR)) break;
+      cursor = cursor.parentElement;
+    }
+    return parts.filter(Boolean).join(" > ");
+  }
+
+  function sampleAttrs(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return {};
+    const out = {};
+    ["class", "id", "mesid", "data-message-id", "data-mes-id", "data-index", "data-root", "data-dls-root", "data-dlou-helper-root", "data-dlou-helper-module"].forEach((attr) => {
+      const value = node.getAttribute && node.getAttribute(attr);
+      if (value != null) out[attr] = value;
+    });
+    return out;
+  }
+
+  function editablePreviewFrom(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    const values = [];
+    const controls = [];
+    if (node.matches && node.matches(EDITABLE_SOURCE_SELECTOR)) controls.push(node);
+    if (node.querySelectorAll) {
+      node.querySelectorAll(EDITABLE_SOURCE_SELECTOR).forEach((control) => controls.push(control));
+    }
+    controls.slice(0, 4).forEach((control) => {
+      if (control.closest && control.closest(ROOT_SELECTOR_ALL)) return;
+      const value = control.matches && control.matches("[contenteditable='true']")
+        ? control.textContent
+        : control.value;
+      if (value) values.push(value);
+    });
+    return preview(values.join(" | "));
+  }
+
+  function rememberCandidateSample(sample) {
+    state.candidateSamples.push({
+      at: new Date().toISOString(),
+      module: MODULE_KIND,
+      ...sample,
+    });
+    if (state.candidateSamples.length > 24) {
+      state.candidateSamples.splice(0, state.candidateSamples.length - 24);
+    }
+  }
+
+  function makeCandidateSample(candidate, messageNode, target, raw, skipReason, matched) {
+    return {
+      candidatePath: nodePath(candidate),
+      targetPath: nodePath(target),
+      messagePath: nodePath(messageNode),
+      candidateAttrs: sampleAttrs(candidate),
+      targetAttrs: sampleAttrs(target),
+      messageAttrs: sampleAttrs(messageNode),
+      textPreview: preview(candidate && candidate.textContent),
+      htmlPreview: preview(candidate && candidate.innerHTML),
+      editablePreview: editablePreviewFrom(candidate),
+      rawPreview: preview(raw),
+      skipReason: skipReason || "",
+      matched: Boolean(matched),
+    };
+  }
+
   function processCandidate(candidate) {
+    state.mountAttempts += 1;
     if (!candidate || candidate.nodeType !== Node.ELEMENT_NODE) {
       state.lastSkipReason = "not-element";
+      rememberCandidateSample({ skipReason: state.lastSkipReason, matched: false });
       return false;
     }
     const messageNode = findMessageNode(candidate) || candidate;
     const target = findContentContainer(candidate) || findContentContainer(messageNode) || messageNode;
     if (!target || target.querySelector(`[data-dlou-helper-root="${MODULE_KIND}"]`)) {
       state.lastSkipReason = "already-mounted";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
       return false;
     }
     const raw = readRaw(target, messageNode);
     state.lastRawPreview = preview(raw);
     if (!detect(raw)) {
       state.lastSkipReason = raw ? "no-module-marker" : "empty-raw";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
       return false;
     }
     state.lastMatched = state.lastRawPreview;
     state.lastSkipReason = "";
     const didMount = mount(target, raw);
-    if (didMount) state.mounted += 1;
+    if (didMount) {
+      state.mounted += 1;
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, "rendered", true));
+      notify("rendered");
+    } else {
+      state.lastSkipReason = state.lastError ? "mount-failed" : "mount-returned-false";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, true));
+    }
     return didMount;
   }
 
@@ -554,6 +759,9 @@
         `No ${MODULE_KIND} render after scan: candidates=${result.candidateCount}, reason=${result.lastSkipReason || "unknown"}, raw="${result.lastRawPreview}"`,
         "warning"
       );
+      try {
+        console.warn(`[Douluo UI Helper][${MODULE_KIND}][${BUILD_ID}] diagnostic`, status());
+      } catch (_) {}
     }
     return result;
   }
@@ -611,18 +819,30 @@
   }
 
   function status() {
+    const meta = lockedMeta();
     return {
       script: SCRIPT_NAME,
       version: VERSION,
       module: MODULE_KIND,
+      buildId: BUILD_ID,
+      loadedAt,
+      lockedMeta: meta,
+      publicAssetSha: meta.expectedSha256 || meta.sha256 || "",
+      publicAssetRef: meta.assetRef || meta.asset_ref || "",
+      actualLoadUrl: meta.loadedUrl || meta.url || "",
+      windowLocation: windowLocation(),
+      documentReadyState: document.readyState,
       mounted: state.mounted,
       observed: state.observed,
       lastError: state.lastError,
+      lastErrorStack: state.lastErrorStack,
       lastScanAt: state.lastScanAt,
       candidateCount: state.candidateCount,
       lastRawPreview: state.lastRawPreview,
       lastSkipReason: state.lastSkipReason,
       lastMatched: state.lastMatched,
+      mountAttempts: state.mountAttempts,
+      candidateSamples: state.candidateSamples.slice(),
       scanRuns: state.scanRuns,
     };
   }
@@ -638,6 +858,7 @@
     },
     status,
   };
+  notify("loaded");
 
   if (document.readyState === "loading") {
     document.addEventListener(

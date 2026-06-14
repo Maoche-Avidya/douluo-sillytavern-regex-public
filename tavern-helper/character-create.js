@@ -12,6 +12,7 @@
   const MODULE_KIND = "character-create";
   const API_NAME = "DouLuoCharacterCreateHelper";
   const MARK_TEXT = "【角色创建】";
+  const BUILD_ID = "character-create@0.6.0+b7aa245e3b2a";
   const STYLE_ID = "douluo-character-create-helper-style";
   const ROOT_SELECTOR = "[data-root]";
   const HTML = "\u003c!DOCTYPE html>\r\n\u003chtml lang=\"zh-CN\">\r\n\u003chead>\r\n\u003cmeta charset=\"UTF-8\" />\r\n\u003cmeta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\r\n\u003c!-- BUILD:CSS -->\r\n\u003c/head>\r\n\u003cbody>\r\n\u003cdiv class=\"ds8\" data-root>\r\n  \u003cdiv class=\"ds8-inner\">\r\n    \u003cheader class=\"ds8-head\">\r\n      \u003cdiv class=\"brand\">\u003cspan class=\"brand-sigil\">\u003c/span>\u003cdiv class=\"brand-main\">\u003ch1>\u003cspan>斗罗魂师档案\u003c/span>\u003cspan class=\"brand-sep\">·\u003c/span>\u003cspan>星海魂导终端\u003c/span>\u003c/h1>\u003cp>SOUL MASTER ARCHIVE / STARSEA CONSOLE\u003c/p>\u003c/div>\u003c/div>\n      \u003cdiv class=\"point-core\">\u003cdiv class=\"point-orb\">\u003cspan>剩余魂点 SP\u003c/span>\u003cb data-remain>100\u003c/b>\u003c/div>\u003cdiv class=\"point-orb\">\u003cspan>已消耗 SP\u003c/span>\u003cb data-spent>0\u003c/b>\u003c/div>\u003c/div>\r\n    \u003c/header>\r\n    \u003cnav class=\"stagebar\" data-stagebar>\u003c/nav>\r\n    \u003cmain class=\"shell\">\r\n      \u003csection class=\"page active\" data-page=\"0\">\r\n        \u003ch2 class=\"page-title\">世界线 / 四万年时间轴\u003c/h2>\r\n        \u003cp class=\"page-note\">点击时间节点后，终端会展开对应纪元、开局地点与章节位置；章节与地点会输出对应世界书关键词。\u003c/p>\n        \u003cdiv class=\"holo-panel panel-pad\">\r\n          \u003cdiv class=\"timeline\">\u003cdiv class=\"timeline-line\">\u003c/div>\u003cdiv class=\"nodes\" data-era-nodes>\u003c/div>\u003c/div>\r\n          \u003cdiv class=\"era-detail\">\r\n            \u003cdiv class=\"holo-panel panel-pad\">\u003cdiv class=\"section-head\">\u003ch3 data-era-title>斗一 / 斗罗大陆\u003c/h3>\u003cspan class=\"cost\" data-era-time>传统魂师纪元\u003c/span>\u003c/div>\u003cp class=\"page-note\" data-era-desc>\u003c/p>\u003cdiv class=\"quality-note\" data-era-keywords>\u003c/div>\u003cp class=\"mini era-worldbook-status\" data-era-worldbook-status>选择时间轴后同步 Reborn 世界书条目。\u003c/p>\u003c/div>\n            \u003cdiv class=\"holo-panel panel-pad\">\u003cdiv class=\"section-head\">\u003ch3>开局地点\u003c/h3>\u003cspan class=\"cost\">LOCATION\u003c/span>\u003c/div>\u003cdiv class=\"pick-grid\" data-locations>\u003c/div>\u003cdiv class=\"field custom-location-field\" data-custom-location-wrap>\u003clabel>自定义地点\u003c/label>\u003cinput data-field=\"customLocation\" placeholder=\"例如：边境学院 / 宗门驻地 / 星海前线\" />\u003c/div>\u003cdiv class=\"chapter-row\">\u003cdiv class=\"field\">\u003clabel>章节位置\u003c/label>\u003cselect data-field=\"chapter\">\u003c/select>\u003c/div>\u003cdiv class=\"field\">\u003clabel>自定义章节位置\u003c/label>\u003cinput data-field=\"customChapter\" placeholder=\"例如：大赛前夕 / 宗门任务 / 前线支援\" />\u003c/div>\u003c/div>\u003c/div>\n          \u003c/div>\r\n          \u003cdiv class=\"species-band\">\r\n            \u003cdiv>\u003ch3>开局身份\u003c/h3>\u003cp>选择以人类魂师开局，或以魂兽 / 化形魂兽开局。若选择魂兽，角色档案页会展开额外的魂兽形态录入。\u003c/p>\u003c/div>\r\n            \u003cdiv class=\"species-picks\">\r\n              \u003cbutton class=\"species-card active\" data-species=\"human\">\u003cb>人类\u003c/b>\u003cspan>魂师 / 魂导师 / 学院生\u003c/span>\u003c/button>\r\n              \u003cbutton class=\"species-card\" data-species=\"beast\">\u003cb>魂兽\u003c/b>\u003cspan>魂兽本体 / 化形 / 契约存在\u003c/span>\u003c/button>\r\n            \u003c/div>\r\n          \u003c/div>\r\n        \u003c/div>\r\n      \u003c/section>\r\n      \u003csection class=\"page\" data-page=\"1\">\r\n        \u003ch2 class=\"page-title\">角色档案 / 属性扫描\u003c/h2>\u003cp class=\"page-note\">ATTR SCAN｜本页只采集角色档案、战斗基础属性与日常六维。魂兽信息只作为开局身份记录，不在前端计算战斗面板。\u003c/p>\r\n        \u003cdiv class=\"archive\">\r\n          \u003caside class=\"holo-panel radarBox\">\u003cbutton class=\"id-frame\" type=\"button\" data-avatar-trigger>\u003cdiv class=\"id-frame-head\">\u003cdiv class=\"id-meta\">\u003cb data-portrait-name>未命名魂师\u003c/b>\u003cspan data-portrait-species>人类开局\u003c/span>\u003c/div>\u003cspan class=\"id-tag\">PROFILE IMAGE\u003c/span>\u003c/div>\u003cdiv class=\"avatar-preview\" data-avatar-preview>\u003cimg data-avatar-img alt=\"角色头像预览\" />\u003cdiv class=\"avatar-placeholder\" data-avatar-placeholder>\u003cspan class=\"avatar-plus\">＋\u003c/span>\u003cb>点击导入角色头像\u003c/b>\u003csmall>支持 PNG / JPG / WEBP\u003c/small>\u003c/div>\u003c/div>\u003cinput class=\"avatar-input\" type=\"file\" accept=\"image/*\" data-avatar-input />\u003c/button>\u003cdiv class=\"scan-panel\">\u003cdiv class=\"section-head\">\u003ch3>属性扫描\u003c/h3>\u003cspan class=\"cost\">ATTR SCAN\u003c/span>\u003c/div>\u003cdiv class=\"scan-tabs radar-mode-tabs\">\u003cbutton class=\"scan-tab active\" data-radar-mode=\"battle\">战斗属性\u003c/button>\u003cbutton class=\"scan-tab\" data-radar-mode=\"daily\">日常六维\u003c/button>\u003c/div>\u003cdiv class=\"radar-wrap\">\u003csvg id=\"radarSvg\" viewBox=\"0 0 400 400\">\u003c/svg>\u003c/div>\u003c/div>\u003cdiv class=\"profile-line build-brief\">\u003cdiv class=\"build-brief-title\">\u003cb>当前构筑短评\u003c/b>\u003cspan>BUILD BRIEF\u003c/span>\u003c/div>\u003cdiv class=\"build-brief-row\">\u003cspan class=\"build-brief-label\">魂师代号\u003c/span>\u003cspan class=\"build-brief-value\" data-profile-name>未命名魂师\u003c/span>\u003c/div>\u003cdiv class=\"build-brief-row\">\u003cspan class=\"build-brief-label\">开局身份\u003c/span>\u003cspan class=\"build-brief-value\" data-brief-identity>人类\u003c/span>\u003c/div>\u003cdiv class=\"build-brief-row\">\u003cspan class=\"build-brief-label\">时代位置\u003c/span>\u003cspan class=\"build-brief-value\" data-brief-era>等待选择\u003c/span>\u003c/div>\u003cdiv class=\"build-brief-row\">\u003cspan class=\"build-brief-label\">战斗倾向\u003c/span>\u003cspan class=\"build-brief-value\" data-profile-desc>均衡开局\u003c/span>\u003c/div>\u003cdiv class=\"build-brief-tags\">\u003cspan class=\"build-brief-tag\" data-brief-ap>AP：0 / 9\u003c/span>\u003cspan class=\"build-brief-tag\" data-brief-dp>DP：0 / 25\u003c/span>\u003cspan class=\"build-brief-tag\" data-brief-sp>SP：0 / 100\u003c/span>\u003c/div>\u003c/div>\u003c/aside>\r\n          \u003cdiv class=\"holo-panel panel-pad stack\">\n            \u003cdiv class=\"row\">\u003cdiv class=\"field\">\u003clabel>角色姓名\u003c/label>\u003cinput data-field=\"name\" placeholder=\"例如：蓝银皇继承者 / 自定义姓名\" />\u003c/div>\u003cdiv class=\"field\">\u003clabel>性别 / 称谓\u003c/label>\u003cinput data-field=\"gender\" placeholder=\"例如：男 / 女 / 他们 / 少宗主 / 自定义称谓\" />\u003c/div>\u003c/div>\n            \u003cdiv class=\"row\">\u003cdiv class=\"field\">\u003clabel>角色年龄\u003c/label>\u003cinput data-field=\"age\" placeholder=\"例如：6岁觉醒 / 12岁入学 / 18岁参赛 / 自定义\" />\u003c/div>\u003cdiv class=\"field\">\u003clabel>角色定位\u003c/label>\u003cinput data-field=\"profileRole\" placeholder=\"例如：控制系预备魂师 / 魂导师学徒 / 边境学院旁听生\" />\u003c/div>\u003c/div>\n            \u003cdiv class=\"ai-fill-panel\">\u003cdiv class=\"section-head\">\u003ch3>AI 扩写档案\u003c/h3>\u003cspan class=\"cost\">PROFILE EXPAND\u003c/span>\u003c/div>\u003cdiv class=\"field\">\u003clabel>扩写要求\u003c/label>\u003ctextarea data-ai-fill-prompt placeholder=\"可以手动追加语气、篇幅、风格或禁忌。\">请在不改变角色核心方向的前提下，扩写已经填写的姓名、性别/称谓、年龄、角色定位、外貌特征、性格、服装、一句话概念、开局目标与原著主线关系；空白项按当前世界线、开局地点、章节位置、前端已选择内容和酒馆角色卡静态人设补齐。文字要能直接放入角色档案，保持斗罗大陆同人风格，避免替玩家强行绑定原著主角身份。属性点只在现有倾向基础上微调，并遵守 AP / DP 上限。\u003c/textarea>\u003c/div>\u003cdiv class=\"action-bar\">\u003cbutton class=\"btn\" data-action=\"ai-fill-profile\">AI 扩写当前档案\u003c/button>\u003cspan class=\"start-status\" data-ai-fill-status>等待调用\u003c/span>\u003c/div>\u003cdiv class=\"ai-result\" data-ai-fill-result>\u003c/div>\u003c/div>\n            \u003cdiv class=\"field\">\u003clabel>外貌特征\u003c/label>\u003ctextarea data-field=\"profileAppearance\" placeholder=\"客观描述面容、身形、标志物、气质和一眼能记住的特征。\">\u003c/textarea>\u003c/div>\n            \u003cdiv class=\"field\">\u003clabel>角色性格\u003c/label>\u003ctextarea data-field=\"personality\" placeholder=\"冷静、偏执、温和、骄傲、守护欲强……\">\u003c/textarea>\u003c/div>\u003cdiv class=\"field\">\u003clabel>服装 / 视觉风格\u003c/label>\u003ctextarea data-field=\"outfit\" placeholder=\"学院制服、魂导风衣、宗门礼服、训练服、战术装……\">\u003c/textarea>\u003c/div>\u003cdiv class=\"field\">\u003clabel>一句话概念\u003c/label>\u003ctextarea data-field=\"concept\" placeholder=\"这个角色最核心的幻想是什么？\">\u003c/textarea>\u003c/div>\n            \u003cdiv class=\"row\">\u003cdiv class=\"field\">\u003clabel>开局目标 / 动机\u003c/label>\u003ctextarea data-field=\"startingGoal\" placeholder=\"例如：通过入学考核、寻找失踪导师、证明自创武魂路线、躲开宗门追捕。\">\u003c/textarea>\u003c/div>\u003cdiv class=\"field\">\u003clabel>与原著主线关系\u003c/label>\u003ctextarea data-field=\"canonRelation\" placeholder=\"例如：旁观者 / 支线同行 / 不替代主角 / 与某势力有松散交集。\">\u003c/textarea>\u003c/div>\u003c/div>\n            \u003cdiv class=\"beast-panel\" data-beast-panel>\u003cdiv class=\"section-head\">\u003ch3>魂兽形态档案\u003c/h3>\u003cspan class=\"cost\">BEAST ORIGIN\u003c/span>\u003c/div>\u003cdiv class=\"row\">\u003cdiv class=\"field\">\u003clabel>魂兽种属\u003c/label>\u003cinput data-field=\"beastType\" placeholder=\"例如：金眼黑龙 / 冰碧蝎 / 柔骨兔 / 自定义魂兽\" />\u003c/div>\u003cdiv class=\"field\">\u003clabel>修为年限\u003c/label>\u003cinput data-field=\"beastYears\" placeholder=\"例如：万年 / 十万年 / 凶兽 / 百万年\" />\u003c/div>\u003c/div>\u003cdiv class=\"field\">\u003clabel>化形状态\u003c/label>\u003cdiv class=\"button-group\">\u003cbutton class=\"select-btn active\" data-beast-form=\"未化形\">未化形\u003c/button>\u003cbutton class=\"select-btn\" data-beast-form=\"化形成人\">化形成人\u003c/button>\u003cbutton class=\"select-btn\" data-beast-form=\"半人半兽\">半人半兽\u003c/button>\u003cbutton class=\"select-btn\" data-beast-form=\"特殊化形\">特殊化形\u003c/button>\u003c/div>\u003c/div>\u003cdiv class=\"field\">\u003clabel>兽形特征 / 人形残留\u003c/label>\u003ctextarea data-field=\"beastTraits\" placeholder=\"兽形外观、龙角、兽耳、尾巴、鳞片、魂兽气息、隐藏代价……\">\u003c/textarea>\u003c/div>\u003c/div>\u003cdiv class=\"attr-system\">\u003cdiv class=\"section-head\">\u003ch3>战斗基础属性\u003c/h3>\u003cspan class=\"cost\">BATTLE ATTRIBUTES\u003c/span>\u003c/div>\u003cdiv class=\"point-row\">\u003cspan>已分配 AP：\u003cb data-ap-spent>0\u003c/b> / 9\u003c/span>\u003cspan>剩余 AP：\u003cb data-ap-remain>9\u003c/b> / 9\u003c/span>\u003c/div>\u003cdiv class=\"attr-grid battle-attr-grid\" data-battle-attrs>\u003c/div>\u003cp class=\"mini\">基础值 1 代表活着的基础；单项最高 8，前端只做 AP 分配校验。\u003c/p>\u003cdiv class=\"section-head\">\u003ch3>日常六维\u003c/h3>\u003cspan class=\"cost\">DAILY ATTRIBUTES\u003c/span>\u003c/div>\u003cdiv class=\"point-row\">\u003cspan>已消耗 DP：\u003cb data-dp-spent>0\u003c/b> / 25\u003c/span>\u003cspan>剩余 DP：\u003cb data-dp-remain>25\u003c/b> / 25\u003c/span>\u003c/div>\u003cdiv class=\"attr-grid daily-attr-grid\" data-daily-attrs>\u003c/div>\u003c/div>\n          \u003c/div>\n        \u003c/div>\r\n      \u003c/section>\r\n      \u003csection class=\"page\" data-page=\"2\">\r\n        \u003ch2 class=\"page-title\">武魂觉醒\u003c/h2>\r\n        \u003cp class=\"page-note\">MARTIAL SOUL AWAKENING｜本页采集第一 / 第二 / 第三武魂的原始选择，不执行战斗计算。\u003c/p>\r\n        \u003cdiv class=\"soul-list\" data-soul-slots>\u003c/div>\r\n      \u003c/section>\r\n      \u003csection class=\"page\" data-page=\"3\">\r\n        \u003ch2 class=\"page-title\">背景与特质 / 专长\u003c/h2>\u003cp class=\"page-note\">选择开局场景，补充自定义出身与专长备注。\u003c/p>\u003cdiv class=\"resource-page\" data-resource-body>\u003c/div>\r\n      \u003c/section>\n      \u003csection class=\"page\" data-page=\"4\">\n        \u003ch2 class=\"page-title\">角色羁绊 / 条目控制\u003c/h2>\u003cp class=\"page-note\">按当前时代显示可用角色版本；按钮只写入导出 JSON 的世界书条目与关键词接口，不直接修改世界书资产。自定义 NPC 接口继续保留。\u003c/p>\n        \u003cdiv class=\"bond-layout\">\n          \u003cdiv class=\"vertical-menu\">\u003cbutton class=\"vitem active\" type=\"button\">\u003cb>角色性别控制\u003c/b>\u003cspan>时代 / 版本 / 世界书\u003c/span>\u003c/button>\u003cbutton class=\"vitem\" type=\"button\">\u003cb>自定义 NPC\u003c/b>\u003cspan>创意工坊预留\u003c/span>\u003c/button>\u003c/div>\n          \u003cdiv class=\"stack\">\n            \u003cdiv class=\"holo-panel panel-pad stack\" data-bond-controls>\u003c/div>\n            \u003cdiv data-bond-profiles>\u003c/div>\n            \u003cdiv class=\"holo-panel panel-pad stack\">\u003cdiv class=\"field\">\u003clabel>角色控制备注\u003c/label>\u003ctextarea data-field=\"bondNote\" placeholder=\"记录本轮选择的角色版本、羁绊关系、好感方向或主持人需要注意的替换规则。\">\u003c/textarea>\u003c/div>\u003cdiv class=\"field\">\u003clabel>自定义 NPC / 创意工坊接口预留\u003c/label>\u003ctextarea data-field=\"workshopNote\" placeholder=\"保留玩家自定义 NPC、头像、标签、羁绊等级与事件触发接口。\">\u003c/textarea>\u003c/div>\u003c/div>\n          \u003c/div>\n        \u003c/div>\n      \u003c/section>\n      \u003csection class=\"page\" data-page=\"5\">\n        \u003ch2 class=\"page-title\">档案确认 / 导出中心\u003c/h2>\u003cp class=\"page-note\">最后确认实际生效档案、特性免费改写与点数状态；页脚“开始游戏”始终发送开局档案文本。\u003c/p>\u003cdiv class=\"final-archive-grid\">\u003csection class=\"holo-panel panel-pad final-visual-panel\">\u003cdiv class=\"section-head\">\u003ch3>角色导出预览\u003c/h3>\u003cspan class=\"cost\">VISUAL ARCHIVE\u003c/span>\u003c/div>\u003cdiv class=\"final-validation\" data-final-validation>\u003c/div>\u003cdiv class=\"final-preview\" data-export-preview>\u003c/div>\u003cdiv class=\"final-summary-block\">\u003cdiv class=\"section-head\">\u003ch3>点数汇总\u003c/h3>\u003cspan class=\"cost\">POINT BUY 100\u003c/span>\u003c/div>\u003cdiv class=\"summary-list\" data-summary>\u003c/div>\u003cp class=\"warning\">魂点已经超支，需要降低武魂规格、极致属性、特性或开局资源。\u003c/p>\u003c/div>\u003c/section>\u003csection class=\"holo-panel panel-pad archive-output-panel export-center\">\u003cdiv class=\"section-head export-head\">\u003cdiv>\u003ch3>导出界面\u003c/h3>\u003cp class=\"mini\" data-export-mode-note>选择导出形态后，可直接复制当前内容。\u003c/p>\u003c/div>\u003cspan class=\"cost\" data-export-mode-code>EXPORT\u003c/span>\u003c/div>\u003cdiv class=\"draft-manager\" data-draft-manager>\u003c/div>\u003cdiv class=\"export-control-panel\">\u003cdiv class=\"export-mode-strip\">\u003cdiv>\u003cb data-export-mode-title>视觉摘要\u003c/b>\u003cspan data-export-mode-subtitle>适合快速复核角色档案。\u003c/span>\u003c/div>\u003cem data-export-copy-state>READY\u003c/em>\u003c/div>\u003cdiv class=\"export-tabs\">\u003cbutton class=\"export-tab active\" type=\"button\" data-export-mode=\"visual\">\u003cb>视觉摘要\u003c/b>\u003cspan>PREVIEW\u003c/span>\u003c/button>\u003cbutton class=\"export-tab\" type=\"button\" data-export-mode=\"text\">\u003cb>开局文本\u003c/b>\u003cspan>START TEXT\u003c/span>\u003c/button>\u003cbutton class=\"export-tab\" type=\"button\" data-export-mode=\"payload\">\u003cb>完整 Payload\u003c/b>\u003cspan>JSON\u003c/span>\u003c/button>\u003c/div>\u003c/div>\u003cdiv class=\"export-visual\" data-export-visual>\u003c/div>\u003cdiv class=\"field export-text-field\">\u003cdiv class=\"export-field-head\">\u003clabel data-output-label>开局档案文本\u003c/label>\u003cspan data-export-size>0 字符\u003c/span>\u003c/div>\u003ctextarea class=\"output text-output\" data-output readonly>\u003c/textarea>\u003c/div>\u003cdiv class=\"action-bar export-action-bar\">\u003cbutton class=\"btn\" data-action=\"refresh\">刷新导出\u003c/button>\u003cbutton class=\"btn ghost\" data-action=\"copy-export\">复制当前导出\u003c/button>\u003cspan class=\"start-status\" data-start-status>点击页脚“开始游戏”后会写入聊天输入框并发送。\u003c/span>\u003c/div>\u003c/section>\u003c/div>\n      \u003c/section>\n    \u003c/main>\r\n    \u003cfooter class=\"footer\">\u003cbutton class=\"btn ghost\" data-action=\"prev\">← 上一步\u003c/button>\u003cbutton class=\"btn\" data-action=\"next\">下一步 →\u003c/button>\u003c/footer>\r\n  \u003c/div>\r\n\u003c/div>\r\n\u003c!-- BUILD:JS -->\r\n\u003c/body>\r\n\u003c/html>\r\n";
@@ -39,19 +40,18 @@
   ].join(",");
   const ROOT_SELECTOR_ALL = [
     "[data-cover-root]",
-    "[data-root]",
     "[data-main-text-root]",
     "[data-dlou-helper-root]",
-  ].join(",");
-  const IGNORED_TEXT_SELECTOR = [
-    ROOT_SELECTOR_ALL,
     "[data-dls-root]",
-    "[data-douluo-status-helper]",
+    ".ds8[data-root]",
     ".dls-status-helper-host",
     ".dls-status-helper-panel",
     ".dls-root",
     ".dmt-root",
-    ".ds8",
+  ].join(",");
+  const IGNORED_TEXT_SELECTOR = [
+    ROOT_SELECTOR_ALL,
+    "[data-douluo-status-helper]",
     "button",
     "input",
     "select",
@@ -84,6 +84,7 @@
     "[contenteditable='true']",
   ].join(",");
   const MAIN_TEXT_RE = /^(?![\s\S]*<[a-z][\w:-]*(?:\s+[^<>]*)?\s+data-dl(?:s|github)-root\b)[\s\S]*?((?:<content\b[^>]*>[\s\S]*?<\/content>\s*)+)[\s\S]*$/;
+  const loadedAt = new Date().toISOString();
 
   const state = {
     mounted: 0,
@@ -96,6 +97,9 @@
     lastRawPreview: "",
     lastSkipReason: "",
     lastMatched: "",
+    lastErrorStack: "",
+    candidateSamples: [],
+    mountAttempts: 0,
     scanRuns: 0,
     reportedNoMatch: false,
   };
@@ -111,20 +115,21 @@
 
   function notify(message, type = "info") {
     try {
-      const detail = { module: MODULE_KIND, script: SCRIPT_NAME, message, type };
+      const detail = { module: MODULE_KIND, script: SCRIPT_NAME, buildId: BUILD_ID, message, type };
       document.dispatchEvent(new CustomEvent("douluo:ui-helper-status", { detail }));
     } catch (_) {
       // SillyTavern may run helpers in constrained iframes; status is optional.
     }
     const method = type === "error" ? "warn" : "log";
     try {
-      console[method](`[${SCRIPT_NAME}] ${message}`);
+      console[method](`[Douluo UI Helper][${MODULE_KIND}][${BUILD_ID}] ${message}`);
     } catch (_) {}
   }
 
   function rememberError(error, label) {
     const text = error && error.message ? error.message : String(error || "Unknown error");
     state.lastError = `${label}: ${text}`;
+    state.lastErrorStack = error && error.stack ? String(error.stack) : state.lastError;
     notify(state.lastError, "error");
   }
 
@@ -438,6 +443,77 @@
     return "";
   }
 
+  function hostWindows() {
+    const out = [window];
+    try {
+      if (window.parent && window.parent !== window) out.push(window.parent);
+    } catch (_) {}
+    try {
+      if (window.top && !out.includes(window.top)) out.push(window.top);
+    } catch (_) {}
+    return out;
+  }
+
+  function pushMessage(out, message, source) {
+    if (!message) return;
+    out.push({ message, source });
+  }
+
+  function pushMessageList(out, messages, source) {
+    if (!messages) return;
+    if (!Array.isArray(messages)) {
+      pushMessage(out, messages, source);
+      return;
+    }
+    messages.forEach((message, index) => pushMessage(out, message, `${source}[${index}]`));
+  }
+
+  function getContextRecords(index) {
+    const out = [];
+    const ids = [];
+    if (Number.isFinite(index) && index >= 0) ids.push(index);
+    ids.push(0);
+    for (const host of hostWindows()) {
+      try {
+        const helper = host.TavernHelper;
+        if (helper && typeof helper.getCurrentMessageId === "function") {
+          const id = Number(helper.getCurrentMessageId());
+          if (Number.isFinite(id)) ids.push(id);
+        }
+      } catch (_) {}
+      try {
+        const helper = host.TavernHelper;
+        if (helper && typeof helper.getLastMessageId === "function") {
+          const id = Number(helper.getLastMessageId());
+          if (Number.isFinite(id)) ids.push(id);
+        }
+      } catch (_) {}
+    }
+
+    for (const host of hostWindows()) {
+      try {
+        const helper = host.TavernHelper;
+        if (helper && typeof helper.getChatMessages === "function") {
+          Array.from(new Set(ids)).forEach((id) => {
+            try {
+              pushMessageList(out, helper.getChatMessages(id, { include_swipes: true }) || [], `TavernHelper.getChatMessages(${id})`);
+            } catch (_) {}
+          });
+        }
+      } catch (_) {}
+      try {
+        const context =
+          host.SillyTavern && typeof host.SillyTavern.getContext === "function"
+            ? host.SillyTavern.getContext()
+            : null;
+        if (context && Array.isArray(context.chat)) {
+          pushMessageList(out, context.chat, "SillyTavern.context.chat");
+        }
+      } catch (_) {}
+    }
+    return out;
+  }
+
   function getContextChat() {
     try {
       if (window.TavernHelper && typeof window.TavernHelper.getChatMessages === "function") {
@@ -454,21 +530,41 @@
     return [];
   }
 
+  function messageTextVariants(message) {
+    const out = [];
+    if (!message) return out;
+    if (typeof message === "string") return [message];
+    ["mes", "message", "content", "text", "raw"].forEach((key) => {
+      if (typeof message[key] === "string") out.push(message[key]);
+    });
+    if (Array.isArray(message.swipes)) {
+      message.swipes.forEach((swipe, index) => {
+        if (typeof swipe === "string") out.push(swipe);
+        else messageTextVariants(swipe).forEach((value) => out.push(value));
+        try {
+          const info = message.swipe_info && message.swipe_info[index];
+          if (info) messageTextVariants(info).forEach((value) => out.push(value));
+        } catch (_) {}
+      });
+    }
+    return out;
+  }
+
   function normalizeMessageText(message) {
-    if (!message) return "";
-    if (typeof message === "string") return message;
-    return (
-      message.mes ||
-      message.message ||
-      message.content ||
-      message.text ||
-      message.raw ||
-      ""
-    );
+    const values = messageTextVariants(message);
+    return values.length ? values[0] : "";
   }
 
   function readRawFromContext(node) {
     const index = messageIndexFromNode(node);
+    const records = getContextRecords(index);
+    for (const record of records) {
+      const variants = messageTextVariants(record.message);
+      for (const value of variants) {
+        const preferred = normalizeRawForModule(preferModuleRaw(value, value));
+        if (detect(preferred)) return preferred;
+      }
+    }
     if (index < 0) return "";
     const chat = getContextChat();
     const message = chat[index];
@@ -483,27 +579,136 @@
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, 180);
   }
 
+  function lockedMeta() {
+    try {
+      const all = window.__DLOU_HELPER_LOCKED_META__;
+      return all && all[MODULE_KIND] && typeof all[MODULE_KIND] === "object" ? all[MODULE_KIND] : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function windowLocation() {
+    try {
+      return String(window.location && window.location.href ? window.location.href : "");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function nodeLabel(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    const parts = [node.tagName.toLowerCase()];
+    if (node.id) parts.push(`#${node.id}`);
+    if (node.classList && node.classList.length) {
+      parts.push(`.${Array.from(node.classList).slice(0, 4).join(".")}`);
+    }
+    ["mesid", "data-message-id", "data-mes-id", "data-index", "data-root", "data-dls-root", "data-dlou-helper-root"].forEach((attr) => {
+      const value = node.getAttribute && node.getAttribute(attr);
+      if (value != null) parts.push(value === "" ? `[${attr}]` : `[${attr}="${String(value).slice(0, 24)}"]`);
+    });
+    return parts.join("");
+  }
+
+  function nodePath(node) {
+    const parts = [];
+    let cursor = node && node.nodeType === Node.ELEMENT_NODE ? node : null;
+    while (cursor && parts.length < 6) {
+      parts.unshift(nodeLabel(cursor));
+      if (cursor.matches && cursor.matches(MESSAGE_SELECTOR)) break;
+      cursor = cursor.parentElement;
+    }
+    return parts.filter(Boolean).join(" > ");
+  }
+
+  function sampleAttrs(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return {};
+    const out = {};
+    ["class", "id", "mesid", "data-message-id", "data-mes-id", "data-index", "data-root", "data-dls-root", "data-dlou-helper-root", "data-dlou-helper-module"].forEach((attr) => {
+      const value = node.getAttribute && node.getAttribute(attr);
+      if (value != null) out[attr] = value;
+    });
+    return out;
+  }
+
+  function editablePreviewFrom(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    const values = [];
+    const controls = [];
+    if (node.matches && node.matches(EDITABLE_SOURCE_SELECTOR)) controls.push(node);
+    if (node.querySelectorAll) {
+      node.querySelectorAll(EDITABLE_SOURCE_SELECTOR).forEach((control) => controls.push(control));
+    }
+    controls.slice(0, 4).forEach((control) => {
+      if (control.closest && control.closest(ROOT_SELECTOR_ALL)) return;
+      const value = control.matches && control.matches("[contenteditable='true']")
+        ? control.textContent
+        : control.value;
+      if (value) values.push(value);
+    });
+    return preview(values.join(" | "));
+  }
+
+  function rememberCandidateSample(sample) {
+    state.candidateSamples.push({
+      at: new Date().toISOString(),
+      module: MODULE_KIND,
+      ...sample,
+    });
+    if (state.candidateSamples.length > 24) {
+      state.candidateSamples.splice(0, state.candidateSamples.length - 24);
+    }
+  }
+
+  function makeCandidateSample(candidate, messageNode, target, raw, skipReason, matched) {
+    return {
+      candidatePath: nodePath(candidate),
+      targetPath: nodePath(target),
+      messagePath: nodePath(messageNode),
+      candidateAttrs: sampleAttrs(candidate),
+      targetAttrs: sampleAttrs(target),
+      messageAttrs: sampleAttrs(messageNode),
+      textPreview: preview(candidate && candidate.textContent),
+      htmlPreview: preview(candidate && candidate.innerHTML),
+      editablePreview: editablePreviewFrom(candidate),
+      rawPreview: preview(raw),
+      skipReason: skipReason || "",
+      matched: Boolean(matched),
+    };
+  }
+
   function processCandidate(candidate) {
+    state.mountAttempts += 1;
     if (!candidate || candidate.nodeType !== Node.ELEMENT_NODE) {
       state.lastSkipReason = "not-element";
+      rememberCandidateSample({ skipReason: state.lastSkipReason, matched: false });
       return false;
     }
     const messageNode = findMessageNode(candidate) || candidate;
     const target = findContentContainer(candidate) || findContentContainer(messageNode) || messageNode;
     if (!target || target.querySelector(`[data-dlou-helper-root="${MODULE_KIND}"]`)) {
       state.lastSkipReason = "already-mounted";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
       return false;
     }
     const raw = readRaw(target, messageNode);
     state.lastRawPreview = preview(raw);
     if (!detect(raw)) {
       state.lastSkipReason = raw ? "no-module-marker" : "empty-raw";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
       return false;
     }
     state.lastMatched = state.lastRawPreview;
     state.lastSkipReason = "";
     const didMount = mount(target, raw);
-    if (didMount) state.mounted += 1;
+    if (didMount) {
+      state.mounted += 1;
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, "rendered", true));
+      notify("rendered");
+    } else {
+      state.lastSkipReason = state.lastError ? "mount-failed" : "mount-returned-false";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, true));
+    }
     return didMount;
   }
 
@@ -554,6 +759,9 @@
         `No ${MODULE_KIND} render after scan: candidates=${result.candidateCount}, reason=${result.lastSkipReason || "unknown"}, raw="${result.lastRawPreview}"`,
         "warning"
       );
+      try {
+        console.warn(`[Douluo UI Helper][${MODULE_KIND}][${BUILD_ID}] diagnostic`, status());
+      } catch (_) {}
     }
     return result;
   }
@@ -611,18 +819,30 @@
   }
 
   function status() {
+    const meta = lockedMeta();
     return {
       script: SCRIPT_NAME,
       version: VERSION,
       module: MODULE_KIND,
+      buildId: BUILD_ID,
+      loadedAt,
+      lockedMeta: meta,
+      publicAssetSha: meta.expectedSha256 || meta.sha256 || "",
+      publicAssetRef: meta.assetRef || meta.asset_ref || "",
+      actualLoadUrl: meta.loadedUrl || meta.url || "",
+      windowLocation: windowLocation(),
+      documentReadyState: document.readyState,
       mounted: state.mounted,
       observed: state.observed,
       lastError: state.lastError,
+      lastErrorStack: state.lastErrorStack,
       lastScanAt: state.lastScanAt,
       candidateCount: state.candidateCount,
       lastRawPreview: state.lastRawPreview,
       lastSkipReason: state.lastSkipReason,
       lastMatched: state.lastMatched,
+      mountAttempts: state.mountAttempts,
+      candidateSamples: state.candidateSamples.slice(),
       scanRuns: state.scanRuns,
     };
   }
@@ -638,6 +858,7 @@
     },
     status,
   };
+  notify("loaded");
 
   if (document.readyState === "loading") {
     document.addEventListener(
