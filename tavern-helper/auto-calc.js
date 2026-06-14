@@ -59,6 +59,40 @@
 
     const REQUIRED_TEMPLATE_TABLES = Object.freeze(Object.values(CONFIG.tables).flat().filter(Boolean));
 
+    const PHYSICAL_TABLE_NAMES = Object.freeze({
+        '玩家状态与信息': 'player_state',
+        '人物综合数值面板': 'character_stats_panel',
+        '人物运行状态面板': 'character_runtime_state',
+        '玩家天赋与特性表': 'player_traits_perks',
+        '已选特性状态表': 'selected_trait_state',
+        '特性规则扩展表': 'trait_rule_extensions',
+        '特性属性改写规则表': 'trait_attribute_rules',
+        '特性装备栏扩展表': 'trait_equipment_slots',
+        '特性临时状态与乘区表': 'trait_temporary_states',
+        '特性剧情线进度表': 'trait_story_progress',
+        '玩家通用技能': 'general_skills',
+        '武魂总览表': 'martial_souls',
+        '第一武魂': 'soul_ring_skills_first',
+        '第二武魂': 'soul_ring_skills_second',
+        '第三武魂': 'soul_ring_skills_third',
+        '魂骨与魂核面板': 'soul_bone_core_panel',
+        '魂灵表': 'spirits',
+        '斗铠表': 'battle_armor_panel',
+        '魂导器表': 'soul_device_panel',
+        '称号面板': 'title_panel',
+        '称号库': 'title_library',
+        '背包物品表': 'backpack_items',
+        '纪要表': 'chronicle',
+        '重要NPC档案表': 'important_npc_archive',
+        'NPC能力档案表': 'npc_ability_archive',
+        '战斗与控制状态表': 'combat_control_state',
+        '任务与线索追踪表': 'task_clue_tracker',
+        '地点与势力关系表': 'location_faction_relations',
+    });
+    const DISPLAY_TABLE_NAMES = Object.freeze(Object.fromEntries(
+        Object.entries(PHYSICAL_TABLE_NAMES).map(([display, physical]) => [physical, display]),
+    ));
+
     const CORE_RECALC_TABLES = Object.freeze([
         CONFIG.tables.player,
         CONFIG.tables.stats,
@@ -333,17 +367,65 @@
         return (hash >>> 0).toString(36);
     }
 
+    function escapeRegExp(value) {
+        return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function tableNameCandidates(tableName) {
+        const names = [tableName, PHYSICAL_TABLE_NAMES[tableName], DISPLAY_TABLE_NAMES[tableName]].filter(Boolean);
+        return [...new Set(names)];
+    }
+
+    function ddlCreatesTable(ddl, tableName) {
+        if (!ddl || !tableName) return false;
+        return new RegExp(`\\bCREATE\\s+TABLE\\s+["\`\\[]?${escapeRegExp(tableName)}\\b`, 'i').test(String(ddl));
+    }
+
+    function sheetMatchesName(sheet, tableName) {
+        if (!sheet || typeof sheet !== 'object') return false;
+        return sheet.name === tableName
+            || sheet.uid === tableName
+            || sheet.tableName === tableName
+            || sheet.sqlTableName === tableName
+            || sheet.physicalName === tableName
+            || ddlCreatesTable(sheet.sourceData?.ddl || sheet.schema?.ddl || sheet.ddl, tableName);
+    }
+
     function getSheet(db, tableName) {
         if (!db || !tableName) return null;
-        if (db[tableName]) return db[tableName];
+        const candidates = tableNameCandidates(tableName);
+        for (const name of candidates) {
+            if (db[name]) return db[name];
+        }
         for (const [key, value] of Object.entries(db)) {
-            if (key === tableName) return value;
-            if (value && typeof value === 'object' && value.name === tableName) return value;
+            if (candidates.includes(key)) return value;
+            if (candidates.some(name => sheetMatchesName(value, name))) return value;
         }
         if (Array.isArray(db.tables)) {
-            return db.tables.find(t => t && (t.name === tableName || t.uid === tableName)) || null;
+            return db.tables.find(t => candidates.some(name => sheetMatchesName(t, name))) || null;
         }
         return null;
+    }
+
+    function shouldPreferPhysicalTableName(tableName) {
+        const physical = PHYSICAL_TABLE_NAMES[tableName];
+        if (!physical || physical === tableName) return false;
+        const db = exportDatabase(null);
+        if (!db || typeof db !== 'object') return false;
+        if (db[physical]) return true;
+        for (const value of Object.values(db)) {
+            if (sheetMatchesName(value, physical)) return true;
+        }
+        return Array.isArray(db.tables) && db.tables.some(sheet => sheetMatchesName(sheet, physical));
+    }
+
+    function writeTableNameCandidates(tableName) {
+        const candidates = tableNameCandidates(tableName);
+        const physical = PHYSICAL_TABLE_NAMES[tableName];
+        if (physical && shouldPreferPhysicalTableName(tableName)) {
+            return [physical, ...candidates.filter(name => name !== physical)];
+        }
+        return candidates;
     }
 
     function missingTables(db, tableNames = REQUIRED_TEMPLATE_TABLES) {
@@ -2793,20 +2875,30 @@
     async function updateRowCompat(tableName, rowIndex, data, options = {}) {
         if (!api || typeof api.updateRow !== 'function') return false;
         const safeData = sanitizeWriteData(data);
-        try {
-            const result = await api.updateRow(tableName, rowIndex, safeData);
-            if (!apiWriteFailed(result) || options.fallbackObject === false) return result;
-        } catch (error) {
-            if (options.fallbackObject === false) throw error;
-            console.warn(`[${SCRIPT_NAME}] updateRow legacy args failed, fallback to object args`, error);
+        let lastResult = false;
+        for (const candidateName of writeTableNameCandidates(tableName)) {
+            try {
+                const result = await api.updateRow(candidateName, rowIndex, safeData);
+                if (!apiWriteFailed(result)) return result;
+                lastResult = result;
+            } catch (error) {
+                if (options.fallbackObject === false) throw error;
+                console.warn(`[${SCRIPT_NAME}] updateRow legacy args failed for ${candidateName}`, error);
+            }
         }
+        if (options.fallbackObject === false) return lastResult;
         try {
-            return await api.updateRow({
-                tableName,
-                rowIndex,
-                data: safeData,
-                ...writeMutationOptions(options),
-            });
+            for (const candidateName of writeTableNameCandidates(tableName)) {
+                const result = await api.updateRow({
+                    tableName: candidateName,
+                    rowIndex,
+                    data: safeData,
+                    ...writeMutationOptions(options),
+                });
+                if (!apiWriteFailed(result)) return result;
+                lastResult = result;
+            }
+            return lastResult;
         } catch (error) {
             console.warn(`[${SCRIPT_NAME}] updateRow object args failed`, error);
             return false;
@@ -2816,19 +2908,29 @@
     async function insertRowCompat(tableName, data, options = {}) {
         if (!api || typeof api.insertRow !== 'function') return false;
         const safeData = completeInsertData(tableName, data);
-        try {
-            const result = await api.insertRow(tableName, safeData);
-            if (!apiWriteFailed(result) || options.fallbackObject === false) return result;
-        } catch (error) {
-            if (options.fallbackObject === false) throw error;
-            console.warn(`[${SCRIPT_NAME}] insertRow legacy args failed, fallback to object args`, error);
+        let lastResult = false;
+        for (const candidateName of writeTableNameCandidates(tableName)) {
+            try {
+                const result = await api.insertRow(candidateName, safeData);
+                if (!apiWriteFailed(result)) return result;
+                lastResult = result;
+            } catch (error) {
+                if (options.fallbackObject === false) throw error;
+                console.warn(`[${SCRIPT_NAME}] insertRow legacy args failed for ${candidateName}`, error);
+            }
         }
+        if (options.fallbackObject === false) return lastResult;
         try {
-            return await api.insertRow({
-                tableName,
-                data: safeData,
-                ...writeMutationOptions(options),
-            });
+            for (const candidateName of writeTableNameCandidates(tableName)) {
+                const result = await api.insertRow({
+                    tableName: candidateName,
+                    data: safeData,
+                    ...writeMutationOptions(options),
+                });
+                if (!apiWriteFailed(result)) return result;
+                lastResult = result;
+            }
+            return lastResult;
         } catch (error) {
             console.warn(`[${SCRIPT_NAME}] insertRow object args failed`, error);
             return false;
@@ -2838,19 +2940,29 @@
     async function deleteRowCompat(tableName, rowIndex, options = {}) {
         const deleteFn = api && (api.deleteRow || api.removeRow);
         if (!deleteFn) return false;
-        try {
-            const result = await deleteFn.call(api, tableName, rowIndex);
-            if (!apiWriteFailed(result) || options.fallbackObject === false) return result;
-        } catch (error) {
-            if (options.fallbackObject === false) throw error;
-            console.warn(`[${SCRIPT_NAME}] deleteRow legacy args failed, fallback to object args`, error);
+        let lastResult = false;
+        for (const candidateName of writeTableNameCandidates(tableName)) {
+            try {
+                const result = await deleteFn.call(api, candidateName, rowIndex);
+                if (!apiWriteFailed(result)) return result;
+                lastResult = result;
+            } catch (error) {
+                if (options.fallbackObject === false) throw error;
+                console.warn(`[${SCRIPT_NAME}] deleteRow legacy args failed for ${candidateName}`, error);
+            }
         }
+        if (options.fallbackObject === false) return lastResult;
         try {
-            return await deleteFn.call(api, {
-                tableName,
-                rowIndex,
-                ...writeMutationOptions(options),
-            });
+            for (const candidateName of writeTableNameCandidates(tableName)) {
+                const result = await deleteFn.call(api, {
+                    tableName: candidateName,
+                    rowIndex,
+                    ...writeMutationOptions(options),
+                });
+                if (!apiWriteFailed(result)) return result;
+                lastResult = result;
+            }
+            return lastResult;
         } catch (error) {
             console.warn(`[${SCRIPT_NAME}] deleteRow object args failed`, error);
             return false;
