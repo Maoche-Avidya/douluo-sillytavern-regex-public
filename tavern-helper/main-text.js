@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 正文阅读 @0.6.4
+// @name         [助手]斗罗大陆 I-IV · Soul Land 正文阅读 @0.6.5
 // @module       tavern-helper/main-text
-// @version      @0.6.4
+// @version      @0.6.5
 // @source       tavern-helper-scripts/main-text/dist/latest.json
 "use strict";
 
@@ -8,11 +8,11 @@
   "use strict";
 
   const SCRIPT_NAME = "斗罗正文阅读助手脚本";
-  const VERSION = "0.6.4";
+  const VERSION = "0.6.5";
   const MODULE_KIND = "main-text";
   const API_NAME = "DouLuoMainTextHelper";
   const MARK_TEXT = null;
-  const BUILD_ID = "main-text@0.6.4+05c728bc1a96";
+  const BUILD_ID = "main-text@0.6.5+05c728bc1a96";
   const STYLE_ID = "douluo-main-text-helper-style";
   const ROOT_SELECTOR = "[data-main-text-root]";
   const HTML = "\u003c!DOCTYPE html>\n\u003chtml lang=\"zh-CN\">\n\u003chead>\n\u003cmeta charset=\"UTF-8\" />\n\u003cmeta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n\u003ctitle>斗罗正文阅读\u003c/title>\n\u003clink rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n\u003clink rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n\u003clink href=\"https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&display=swap\" rel=\"stylesheet\" />\n\u003cscript>\n  (() => {\n    const themes = new Set([\"starsea\", \"starsea-night\", \"paper\", \"paper-night\"]);\n    let saved = \"starsea\";\n    try {\n      saved = (window.localStorage && window.localStorage.getItem(\"dl-main-text-theme\")) || \"starsea\";\n    } catch (_) {\n      saved = \"starsea\";\n    }\n    const theme = themes.has(saved) ? saved : \"starsea\";\n    window.__dlMainTextTheme = theme;\n    document.documentElement.style.colorScheme = theme.includes(\"night\") || theme === \"starsea\" ? \"dark\" : \"light\";\n  })();\n\u003c/script>\n\u003cscript>\n  window.dmtEnsureMainTextBootstrap = window.dmtEnsureMainTextBootstrap || function(anchor) {\n    var root = anchor && anchor.closest && anchor.closest('[data-main-text-root]');\n    var code = null;\n    if (root) {\n      if (!root.dataset.dmtInstanceId) {\n        window.__dmtMainTextInstanceSeq = (window.__dmtMainTextInstanceSeq || 0) + 1;\n        root.dataset.dmtInstanceId = 'dmt-' + window.__dmtMainTextInstanceSeq;\n      }\n      var cursor = root;\n      while (!code && cursor && cursor.nextElementSibling) {\n        cursor = cursor.nextElementSibling;\n        if (cursor.matches && cursor.matches('[data-dmt-bootstrap-code]')) code = cursor;\n        if (cursor.matches && cursor.matches('[data-main-text-root]')) break;\n      }\n    }\n    if (!code && anchor && anchor.matches && anchor.matches('[data-dmt-bootstrap-code]')) code = anchor;\n    if (!code && anchor && anchor.previousElementSibling && anchor.previousElementSibling.matches && anchor.previousElementSibling.matches('[data-dmt-bootstrap-code]')) code = anchor.previousElementSibling;\n    if (!code) code = document.querySelector('[data-dmt-bootstrap-code]');\n    if (!code || code.dataset.dmtBootstrapped === '1') return;\n    code.dataset.dmtBootstrapped = '1';\n    var script = document.createElement('script');\n    if (root && root.dataset.dmtInstanceId) script.setAttribute('data-dmt-target-root', root.dataset.dmtInstanceId);\n    script.text = decodeURIComponent(escape(atob(code.value || code.textContent || '')));\n    document.body.appendChild(script);\n  };\n\u003c/script>\n\u003c!-- BUILD:CSS -->\n\u003c/head>\n\u003cbody class=\"dmt-preload\" data-theme=\"starsea\">\n\u003cscript>\n  document.body.setAttribute(\"data-theme\", window.__dlMainTextTheme || \"starsea\");\n\u003c/script>\n\n\u003cdiv class=\"dmt-root\" data-root data-main-text-root>\n  \u003cheader class=\"dmt-topbar\">\n    \u003cdiv class=\"dmt-brandmark\" aria-hidden=\"true\">\u003c/div>\n    \u003cdiv class=\"dmt-title\">\n      \u003ch1>斗罗纪行\u003c/h1>\n      \u003cspan>Soul Land Chronicle\u003c/span>\n    \u003c/div>\n    \u003cdiv class=\"dmt-topbar-actions\">\n      \u003cdiv class=\"dmt-theme-selector dmt-theme-selector--topbar\" aria-label=\"外观模式\">\n        \u003cbutton type=\"button\" data-theme-key=\"starsea\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'starsea');\">星海\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"starsea-night\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'starsea-night');\">星夜\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"paper\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'paper');\">米黄\u003c/button>\n        \u003cbutton type=\"button\" data-theme-key=\"paper-night\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyTheme&&window.dmtApplyTheme(this,'paper-night');\">墨纸\u003c/button>\n      \u003c/div>\n      \u003cbutton class=\"dmt-icon-btn\" type=\"button\" data-settings-toggle title=\"设置\" aria-label=\"设置\" onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);var r=this.closest('[data-main-text-root]');var p=r&&r.querySelector('[data-settings-panel]');if(p)p.classList.toggle('is-open');\">\n        \u003csvg viewBox=\"0 0 24 24\" aria-hidden=\"true\">\n          \u003cpath d=\"M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.73 8.87c-.11.21-.07.47.12.61l2.03 1.58c-.04.3-.07.63-.07.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .43-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.49-.12-.61l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8a3.6 3.6 0 0 1 0 7.2Z\"/>\n        \u003c/svg>\n      \u003c/button>\n    \u003c/div>\n  \u003c/header>\n\n  \u003caside class=\"dmt-settings\" data-settings-panel aria-label=\"正文设置\">\n    \u003csection class=\"dmt-setting-row\">\n      \u003clabel class=\"dmt-setting-label\" for=\"dmt-font-select\">正文字体\u003c/label>\n      \u003cselect id=\"dmt-font-select\" data-font-select onchange=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtApplyFont&&window.dmtApplyFont(this,this.value);\">\n        \u003coption value=\"theme\">跟随主题\u003c/option>\n        \u003coption value=\"serif\">思源宋体\u003c/option>\n        \u003coption value=\"sans\">思源黑体\u003c/option>\n        \u003coption value=\"yahei\">微软雅黑\u003c/option>\n        \u003coption value=\"songti\">宋体\u003c/option>\n        \u003coption value=\"kaiti\">楷体\u003c/option>\n        \u003coption value=\"fangsong\">仿宋\u003c/option>\n      \u003c/select>\n    \u003c/section>\n\n    \u003csection class=\"dmt-setting-row\">\n      \u003cdiv class=\"dmt-setting-label\">正文字号\u003c/div>\n      \u003cdiv class=\"dmt-stepper\">\n        \u003cbutton type=\"button\" data-font-dec onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustFontSize&&window.dmtAdjustFontSize(this,-1);\">-\u003c/button>\n        \u003coutput data-font-size>18\u003c/output>\n        \u003cbutton type=\"button\" data-font-inc onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustFontSize&&window.dmtAdjustFontSize(this,1);\">+\u003c/button>\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-setting-row\">\n      \u003cdiv class=\"dmt-setting-label\">对白字号\u003c/div>\n      \u003cdiv class=\"dmt-stepper\">\n        \u003cbutton type=\"button\" data-dialogue-dec onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustDialogueSize&&window.dmtAdjustDialogueSize(this,-1);\">-\u003c/button>\n        \u003coutput data-dialogue-size>16\u003c/output>\n        \u003cbutton type=\"button\" data-dialogue-inc onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtAdjustDialogueSize&&window.dmtAdjustDialogueSize(this,1);\">+\u003c/button>\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-user-panel\">\n      \u003cdiv class=\"dmt-setting-label\">玩家头像\u003c/div>\n      \u003cdiv class=\"dmt-user-avatar-row\">\n        \u003cspan class=\"dmt-user-avatar-preview\" data-user-avatar-preview>玩\u003c/span>\n        \u003cbutton type=\"button\" data-user-avatar-upload onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtUploadUserAvatar&&window.dmtUploadUserAvatar(this);\">上传玩家头像\u003c/button>\n        \u003cbutton type=\"button\" data-user-avatar-clear onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtClearUserAvatar&&window.dmtClearUserAvatar(this);\">使用角色创建头像\u003c/button>\n        \u003cinput type=\"file\" data-user-avatar-file accept=\"image/*\" hidden />\n      \u003c/div>\n    \u003c/section>\n\n    \u003csection class=\"dmt-character-panel\">\n      \u003cdiv class=\"dmt-setting-label\">自定义角色\u003c/div>\n      \u003cdiv class=\"dmt-character-list\" data-character-list>\u003c/div>\n      \u003cdiv class=\"dmt-character-form\">\n        \u003cinput type=\"text\" data-character-name placeholder=\"角色名称\" maxlength=\"32\" />\n        \u003cinput type=\"color\" data-character-color value=\"#e8c36c\" title=\"角色颜色\" />\n        \u003cbutton type=\"button\" data-character-upload onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtUploadCharacterAvatar&&window.dmtUploadCharacterAvatar(this);\">上传角色头像\u003c/button>\n        \u003cinput type=\"file\" data-character-file accept=\"image/*\" hidden />\n        \u003cimg data-character-preview alt=\"角色头像预览\" />\n        \u003cbutton type=\"button\" data-character-save onclick=\"window.dmtEnsureMainTextBootstrap&&window.dmtEnsureMainTextBootstrap(this);window.dmtSaveCustomCharacter&&window.dmtSaveCustomCharacter(this);\">保存角色\u003c/button>\n      \u003c/div>\n    \u003c/section>\n  \u003c/aside>\n\n  \u003cmain class=\"dmt-reader\">\n    \u003carticle class=\"dmt-content\" id=\"readingContent\" data-content>\n\u003ctemplate data-raw-content>\n$1\n\u003c/template>\n    \u003c/article>\n  \u003c/main>\n\n  \u003cdiv class=\"dmt-modal\" data-image-modal hidden>\n    \u003cbutton type=\"button\" class=\"dmt-modal-close\" data-modal-close aria-label=\"关闭预览\">x\u003c/button>\n    \u003cimg data-modal-image alt=\"放大预览\" />\n  \u003c/div>\n  \u003cdiv class=\"dmt-toast\" data-toast role=\"status\" aria-live=\"polite\">\u003c/div>\n\u003c/div>\n\n\u003c!-- BUILD:JS -->\n\u003c/body>\n\u003c/html>\n";
@@ -505,9 +505,23 @@
     }, delay);
   }
 
-  function shouldPreserveMountedMainTextMiss(target, rawInfo, raw) {
+  function mainTextTargetCacheMatches(messageNode, target, rawInfo = null) {
+    if (MODULE_KIND !== "main-text") return true;
+    const key = mainTextMessageCacheKey(messageNode, rawInfo);
+    if (!key) return true;
+    try {
+      const direct = target && mainTextElementCache.get(target);
+      if (!direct || !direct.cacheKey) return true;
+      return direct.cacheKey === key;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function shouldPreserveMountedMainTextMiss(messageNode, target, rawInfo, raw) {
     if (MODULE_KIND !== "main-text" || !target || !target.dataset || target.dataset[doneAttr] !== "1") return false;
     if (!rawInfo || !rawInfo.strong) return false;
+    if (!mainTextTargetCacheMatches(messageNode, target, rawInfo)) return false;
     const info = streamStateFor(target);
     const rawHash = stableHash(String(raw || ""));
     const now = Date.now();
@@ -544,36 +558,60 @@
     return true;
   }
 
-  function mainTextMessageCacheKey(messageNode) {
-    const index = messageIndexFromNode(messageNode);
-    return index >= 0 ? `message:${index}` : "";
+  function contextSwipeIndexForNode(node) {
+    const index = messageIndexFromNode(node);
+    if (index < 0) return -1;
+    const chat = getContextChat();
+    const direct = activeSwipeIndex(chat[index]);
+    if (direct >= 0) return direct;
+    try {
+      const helper = window.TavernHelper;
+      if (helper && typeof helper.getChatMessages === "function") {
+        const messages = helper.getChatMessages(index, { include_swipes: true }) || [];
+        const list = Array.isArray(messages) ? messages : [messages];
+        for (const message of list) {
+          const swipe = activeSwipeIndex(message);
+          if (swipe >= 0) return swipe;
+        }
+      }
+    } catch (_) {}
+    return -1;
   }
 
-  function rememberMainTextRender(messageNode, target, raw) {
+  function mainTextMessageCacheKey(messageNode, rawInfo = null) {
+    const index = messageIndexFromNode(messageNode);
+    if (index < 0) return "";
+    const swipeIndex = rawInfo && Number.isFinite(Number(rawInfo.swipeIndex))
+      ? Number(rawInfo.swipeIndex)
+      : contextSwipeIndexForNode(messageNode);
+    return swipeIndex >= 0 ? `message:${index}:swipe:${swipeIndex}` : `message:${index}`;
+  }
+
+  function rememberMainTextRender(messageNode, target, raw, rawInfo = null) {
     if (MODULE_KIND !== "main-text") return;
     const capture = mainTextCaptureFromRaw(raw);
     if (!capture) return;
-    const value = { capture, rawPreview: preview(raw), at: Date.now() };
+    const cacheKey = mainTextMessageCacheKey(messageNode, rawInfo);
+    const value = { capture, rawPreview: preview(raw), at: Date.now(), cacheKey };
     try {
       if (target) mainTextElementCache.set(target, value);
     } catch (_) {}
-    const key = mainTextMessageCacheKey(messageNode);
-    if (key) mainTextMessageCache.set(key, value);
+    if (cacheKey) mainTextMessageCache.set(cacheKey, value);
   }
 
-  function cachedMainTextRender(messageNode, target) {
+  function cachedMainTextRender(messageNode, target, rawInfo = null) {
     if (MODULE_KIND !== "main-text") return null;
+    const key = mainTextMessageCacheKey(messageNode, rawInfo);
     try {
       const direct = target && mainTextElementCache.get(target);
-      if (direct && direct.capture) return direct;
+      if (direct && direct.capture && (!key || !direct.cacheKey || direct.cacheKey === key)) return direct;
     } catch (_) {}
-    const key = mainTextMessageCacheKey(messageNode);
     return key ? mainTextMessageCache.get(key) || null : null;
   }
 
   function restoreMainTextFromCache(messageNode, target, rawInfo, raw) {
     if (MODULE_KIND !== "main-text" || !rawInfo || !rawInfo.strong || !mainTextRawLooksStreaming(raw)) return false;
-    const cached = cachedMainTextRender(messageNode, target);
+    const cached = cachedMainTextRender(messageNode, target, rawInfo);
     if (!cached || !cached.capture) return false;
     state.lastMainTextStreamReason = "mounted-streaming-cache-restored";
     state.lastMainTextStreamAt = Date.now();
@@ -1109,27 +1147,28 @@
             raw: preferred,
             source: record.source || "context",
             strong,
+            swipeIndex: activeSwipe,
           };
         }
       }
     }
 
     if (firstStrongRaw != null) {
-      return { raw: firstStrongRaw, source: firstStrongSource, strong: true };
+      return { raw: firstStrongRaw, source: firstStrongSource, strong: true, swipeIndex: contextSwipeIndexForNode(node) };
     }
     if (firstRaw != null) {
-      return { raw: firstRaw, source: firstSource, strong: false };
+      return { raw: firstRaw, source: firstSource, strong: false, swipeIndex: contextSwipeIndexForNode(node) };
     }
-    if (index < 0) return { raw: "", source: "context-none", strong: false };
+    if (index < 0) return { raw: "", source: "context-none", strong: false, swipeIndex: -1 };
     const chat = getContextChat();
     const message = chat[index];
     const raw = normalizeRawForModule(normalizeMessageText(message));
-    return { raw, source: raw ? "context-chat-index" : "context-none", strong: false };
+    return { raw, source: raw ? "context-chat-index" : "context-none", strong: false, swipeIndex: activeSwipeIndex(message) };
   }
 
   function readRawInfo(node, fallbackNode) {
     const domRaw = normalizeRawForModule(readRawFromDom(node, fallbackNode) || "");
-    if (domRaw) return { raw: domRaw, source: "dom", strong: true };
+    if (domRaw) return { raw: domRaw, source: "dom", strong: true, swipeIndex: contextSwipeIndexForNode(fallbackNode || node) };
     return readRawFromContextInfo(fallbackNode || node);
   }
 
@@ -1314,7 +1353,7 @@
           state.lastRawStrong = previousRawStrong;
           return false;
         }
-        if (shouldPreserveMountedMainTextMiss(target, rawInfo, raw)) {
+        if (shouldPreserveMountedMainTextMiss(messageNode, target, rawInfo, raw)) {
           state.lastSkipReason = state.lastMainTextStreamReason || "mounted-streaming-incomplete-preserved";
           rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
           return false;
@@ -1357,7 +1396,7 @@
     const didMount = mount(target, raw);
     if (didMount) {
       state.mounted += 1;
-      rememberMainTextRender(messageNode, target, raw);
+      rememberMainTextRender(messageNode, target, raw, rawInfo);
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, "rendered", true));
       notify("rendered");
     } else {

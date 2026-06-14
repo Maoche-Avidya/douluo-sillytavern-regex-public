@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.6.4
+// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.6.5
 // @module       tavern-helper/auto-calc
-// @version      @0.6.4
+// @version      @0.6.5
 // @source       tavern-helper-scripts/auto-calc/dist/latest.json
 "use strict";
 
@@ -8,7 +8,7 @@
     'use strict';
 
     const SCRIPT_NAME = '斗罗自动计算脚本';
-    const VERSION = '0.6.2';
+    const VERSION = '0.6.5';
     const STORAGE_KEY = 'douluo_auto_calc_enabled';
     const LEGACY_STORAGE_KEYS = Object.freeze(['douluo_v03_auto_calc_enabled']);
     const EXTREME_ATTACK_MULTIPLIER = 1.5;
@@ -185,6 +185,9 @@
     let lastInputHash = '';
     let pendingAutoRecalc = null;
     let tableUpdateCallback = null;
+    let lastCoreInputWarningAt = 0;
+    let lastCoreInputWarningSignature = '';
+    const CORE_INPUT_AUTO_WARNING_COOLDOWN_MS = 60000;
     const preferredWriteTableNames = new Map();
     const VISUALIZER_ROOT_SELECTOR = [
         '.acu-wrapper',
@@ -837,6 +840,51 @@
 
     function shouldNotifyAwaitingInitialSeed(options = {}) {
         return Boolean(options.notify || options.showToast);
+    }
+
+    function isLifecycleAutoRecalculate(options = {}) {
+        const reason = asText(options.reason);
+        return ['start', 'auto', 'interval', 'table-update'].includes(reason);
+    }
+
+    function singletonSeedRowCount(db) {
+        return SINGLETON_TABLES.reduce((sum, tableName) => sum + dataRowCount(db, tableName), 0);
+    }
+
+    function hasEarlyCoreSingletonSeed(db) {
+        const singletonCount = singletonSeedRowCount(db);
+        return singletonCount > 0 && singletonCount < SINGLETON_TABLES.length;
+    }
+
+    function looksLikeInitialCreationSeed(db, missingCoreInputs = []) {
+        if (!Array.isArray(missingCoreInputs) || !missingCoreInputs.length) return false;
+        const creationEvidence = hasCreationEvidence(db);
+        const earlyCoreSeed = hasEarlyCoreSingletonSeed(db);
+        if (!creationEvidence && !earlyCoreSeed) return false;
+        const singletonCount = singletonSeedRowCount(db);
+        const statsRowMissing = missingCoreInputs.includes(`${CONFIG.tables.stats}.row`);
+        if (statsRowMissing) return creationEvidence ? singletonCount <= 1 : earlyCoreSeed;
+        return singletonCount < SINGLETON_TABLES.length;
+    }
+
+    function shouldAwaitCoreSeed(options = {}, db = {}, missingCoreInputs = []) {
+        return isLifecycleAutoRecalculate(options) && looksLikeInitialCreationSeed(db, missingCoreInputs);
+    }
+
+    function shouldNotifyCoreInputIncomplete(options = {}, signature = '') {
+        if (!isLifecycleAutoRecalculate(options)) return true;
+        const now = Date.now();
+        const key = signature || 'core input incomplete';
+        if (key !== lastCoreInputWarningSignature || now - lastCoreInputWarningAt >= CORE_INPUT_AUTO_WARNING_COOLDOWN_MS) {
+            lastCoreInputWarningSignature = key;
+            lastCoreInputWarningAt = now;
+            return true;
+        }
+        return false;
+    }
+
+    function recalcCoreInputToast(options, message) {
+        if (shouldNotifyCoreInputIncomplete(options, message)) recalcToast(options, message, 'warning', 'severe');
     }
 
     function verifyDerivedWrite(db, expectPlayer) {
@@ -5067,6 +5115,13 @@
             return { ok: true, skipped: true, reason: 'awaiting initial seed' };
         }
 
+        const initialStatsRow = firstRow(db, CONFIG.tables.stats);
+        const initialMissingCoreInputs = missingCoreInputFields(initialStatsRow);
+        if (shouldAwaitCoreSeed(options, db, initialMissingCoreInputs)) {
+            log(`等待建卡核心字段落库：${initialMissingCoreInputs.join('、')}`);
+            return { ok: true, skipped: true, reason: 'awaiting initial seed', missingCoreInputs: initialMissingCoreInputs };
+        }
+
         isWriting = true;
         try {
             const singletonRepair = await repairSingletonTables(db, { quiet: true });
@@ -5081,7 +5136,7 @@
             if (missingCoreInputs.length) {
                 const message = `核心基础字段未完整落库：${missingCoreInputs.join('、')}`;
                 console.warn(`[${SCRIPT_NAME}] ${message}`);
-                recalcToast(options, message, 'warning', 'severe');
+                recalcCoreInputToast(options, message);
                 return { ok: false, reason: 'core input incomplete', missingCoreInputs, failedWrites: singletonRepair.failed };
             }
 
