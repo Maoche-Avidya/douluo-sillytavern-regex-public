@@ -43,6 +43,28 @@
     "[data-main-text-root]",
     "[data-dlou-helper-root]",
   ].join(",");
+  const IGNORED_TEXT_SELECTOR = [
+    ROOT_SELECTOR_ALL,
+    "[data-dls-root]",
+    "[data-douluo-status-helper]",
+    ".dls-status-helper-host",
+    ".dls-status-helper-panel",
+    ".dls-root",
+    ".dmt-root",
+    ".ds8",
+    "button",
+    "input",
+    "select",
+    "textarea",
+    "option",
+    "script",
+    "style",
+    "template",
+    "svg",
+    "canvas",
+    "[hidden]",
+    "[aria-hidden='true']",
+  ].join(",");
   const RAW_ATTRS = [
     "data-raw-message",
     "data-message-raw",
@@ -64,6 +86,12 @@
     flushTimer: 0,
     lastError: "",
     lastScanAt: 0,
+    candidateCount: 0,
+    lastRawPreview: "",
+    lastSkipReason: "",
+    lastMatched: "",
+    scanRuns: 0,
+    reportedNoMatch: false,
   };
 
   const doneAttr = `dlou${toDatasetToken(MODULE_KIND)}Mounted`;
@@ -247,7 +275,7 @@
     const trimmed = text.trim();
     if (!trimmed) return false;
     if (MODULE_KIND === "main-text") return MAIN_TEXT_RE.test(text);
-    return trimmed === MARK_TEXT || trimmed.startsWith(MARK_TEXT);
+    return trimmed.includes(MARK_TEXT);
   }
 
   function mount(target, raw) {
@@ -274,6 +302,83 @@
     return node.querySelector ? node.querySelector(CONTENT_SELECTOR) : null;
   }
 
+  function isIgnoredTextElement(node) {
+    return !!(
+      node &&
+      node.nodeType === Node.ELEMENT_NODE &&
+      node.matches &&
+      node.matches(IGNORED_TEXT_SELECTOR)
+    );
+  }
+
+  function contentText(node) {
+    if (!node) return "";
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    if (isIgnoredTextElement(node)) return "";
+    if (node.tagName === "BR") return "\n";
+    let out = "";
+    node.childNodes.forEach((child) => {
+      out += contentText(child);
+    });
+    return out;
+  }
+
+  function cleanedInnerHtml(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    const clone = node.cloneNode(true);
+    if (clone.matches && clone.matches(IGNORED_TEXT_SELECTOR)) return "";
+    clone.querySelectorAll(IGNORED_TEXT_SELECTOR).forEach((child) => child.remove());
+    return clone.innerHTML || "";
+  }
+
+  function rawAttrsFrom(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    for (const attr of RAW_ATTRS) {
+      const value = node.getAttribute && node.getAttribute(attr);
+      if (value) return value;
+    }
+    return "";
+  }
+
+  function rawNodeTextFrom(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.querySelector) return "";
+    const rawNode = node.querySelector(RAW_NODE_SELECTOR);
+    if (!rawNode) return "";
+    if (rawNode.tagName === "SCRIPT" || rawNode.tagName === "TEMPLATE") {
+      return rawNode.textContent || "";
+    }
+    const value = rawNode.getAttribute("data-raw-message-text");
+    if (value) return value;
+    return rawNode.textContent || "";
+  }
+
+  function markerOnly(value) {
+    const text = String(value || "");
+    if (MARK_TEXT && text.includes(MARK_TEXT)) return MARK_TEXT;
+    return "";
+  }
+
+  function preferModuleRaw(text, html) {
+    const plain = String(text || "");
+    const markup = String(html || "");
+    if (MODULE_KIND === "main-text") {
+      if (MAIN_TEXT_RE.test(plain)) return plain;
+      if (MAIN_TEXT_RE.test(markup)) return markup;
+      return plain || markup;
+    }
+    const plainMarker = markerOnly(plain);
+    if (plainMarker) return plainMarker;
+    const markupMarker = markerOnly(markup);
+    if (markupMarker) return markupMarker;
+    return plain || markup;
+  }
+
+  function normalizeRawForModule(raw) {
+    if (MODULE_KIND === "main-text") return raw;
+    return markerOnly(raw) || raw;
+  }
+
   function messageIndexFromNode(node) {
     const attrs = ["mesid", "data-message-id", "data-mes-id", "data-index"];
     for (const attr of attrs) {
@@ -286,26 +391,21 @@
     return -1;
   }
 
-  function readRawFromDom(node) {
-    for (const attr of RAW_ATTRS) {
-      const value = node.getAttribute && node.getAttribute(attr);
-      if (value) return value;
+  function readRawFromDom(node, fallbackNode) {
+    const content = findContentContainer(node) || findContentContainer(fallbackNode);
+    for (const source of [content, node, fallbackNode]) {
+      const attrRaw = rawAttrsFrom(source);
+      if (attrRaw) return attrRaw;
     }
-    const rawNode = node.querySelector ? node.querySelector(RAW_NODE_SELECTOR) : null;
-    if (rawNode) {
-      if (rawNode.tagName === "SCRIPT" || rawNode.tagName === "TEMPLATE") {
-        return rawNode.textContent || "";
-      }
-      const value = rawNode.getAttribute("data-raw-message-text");
-      if (value) return value;
-      return rawNode.textContent || "";
+    for (const source of [content, node, fallbackNode]) {
+      const rawNodeText = rawNodeTextFrom(source);
+      if (rawNodeText) return rawNodeText;
     }
-    const content = findContentContainer(node);
-    if (content && !content.closest(ROOT_SELECTOR_ALL)) {
-      return content.textContent || "";
+    if (content) {
+      return preferModuleRaw(contentText(content), cleanedInnerHtml(content));
     }
-    if (!node.closest(ROOT_SELECTOR_ALL)) {
-      return node.textContent || "";
+    if (node && node.nodeType === Node.ELEMENT_NODE && !isIgnoredTextElement(node)) {
+      return preferModuleRaw(contentText(node), cleanedInnerHtml(node));
     }
     return "";
   }
@@ -347,16 +447,33 @@
     return normalizeMessageText(message);
   }
 
-  function readRaw(node) {
-    return readRawFromDom(node) || readRawFromContext(node) || "";
+  function readRaw(node, fallbackNode) {
+    return normalizeRawForModule(readRawFromDom(node, fallbackNode) || readRawFromContext(fallbackNode || node) || "");
   }
 
-  function processMessage(messageNode) {
-    if (!messageNode) return false;
-    if (messageNode.querySelector(`[data-dlou-helper-root="${MODULE_KIND}"]`)) return false;
-    const target = findContentContainer(messageNode) || messageNode;
-    const raw = readRaw(messageNode);
-    if (!detect(raw)) return false;
+  function preview(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, 180);
+  }
+
+  function processCandidate(candidate) {
+    if (!candidate || candidate.nodeType !== Node.ELEMENT_NODE) {
+      state.lastSkipReason = "not-element";
+      return false;
+    }
+    const messageNode = findMessageNode(candidate) || candidate;
+    const target = findContentContainer(candidate) || findContentContainer(messageNode) || messageNode;
+    if (!target || target.querySelector(`[data-dlou-helper-root="${MODULE_KIND}"]`)) {
+      state.lastSkipReason = "already-mounted";
+      return false;
+    }
+    const raw = readRaw(target, messageNode);
+    state.lastRawPreview = preview(raw);
+    if (!detect(raw)) {
+      state.lastSkipReason = raw ? "no-module-marker" : "empty-raw";
+      return false;
+    }
+    state.lastMatched = state.lastRawPreview;
+    state.lastSkipReason = "";
     const didMount = mount(target, raw);
     if (didMount) state.mounted += 1;
     return didMount;
@@ -365,31 +482,69 @@
   function collectCandidates(root) {
     const scope = root || document;
     const nodes = new Set();
+    if (scope.matches && scope.matches(CONTENT_SELECTOR)) nodes.add(scope);
     if (scope.matches && scope.matches(MESSAGE_SELECTOR)) nodes.add(scope);
     if (scope.querySelectorAll) {
+      scope.querySelectorAll(CONTENT_SELECTOR).forEach((node) => nodes.add(node));
       scope.querySelectorAll(MESSAGE_SELECTOR).forEach((node) => nodes.add(node));
     }
-    return Array.from(nodes).sort((a, b) => messageIndexFromNode(a) - messageIndexFromNode(b));
+    return Array.from(nodes).sort((a, b) => {
+      const aMsg = findMessageNode(a) || a;
+      const bMsg = findMessageNode(b) || b;
+      return messageIndexFromNode(aMsg) - messageIndexFromNode(bMsg);
+    });
   }
 
   function scanNew(options = {}) {
     const latestOnly = Boolean(options.latestOnly);
     const candidates = collectCandidates(options.root || document);
+    state.candidateCount = candidates.length;
+    state.scanRuns += 1;
     const ordered = latestOnly ? candidates.reverse() : candidates;
     let rendered = 0;
+    let matched = 0;
     for (const node of ordered) {
-      if (processMessage(node)) {
+      const before = state.lastMatched;
+      if (processCandidate(node)) {
         rendered += 1;
         if (latestOnly) break;
       }
+      if (state.lastMatched && state.lastMatched !== before) matched += 1;
     }
     state.lastScanAt = Date.now();
-    return rendered;
+    const result = {
+      rendered,
+      matched,
+      candidateCount: candidates.length,
+      lastRawPreview: state.lastRawPreview,
+      lastSkipReason: state.lastSkipReason,
+      lastMatched: state.lastMatched,
+    };
+    if (!rendered && !state.mounted && !state.reportedNoMatch && state.scanRuns >= 3) {
+      state.reportedNoMatch = true;
+      notify(
+        `No ${MODULE_KIND} render after scan: candidates=${result.candidateCount}, reason=${result.lastSkipReason || "unknown"}, raw="${result.lastRawPreview}"`,
+        "warning"
+      );
+    }
+    return result;
   }
 
   function enqueue(node) {
+    if (!node) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const parent = node.parentElement;
+      if (parent) enqueue(parent);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.matches && (node.matches(CONTENT_SELECTOR) || node.matches(MESSAGE_SELECTOR))) {
+      state.pending.add(node);
+    }
     const messageNode = findMessageNode(node);
     if (messageNode) state.pending.add(messageNode);
+    const contentNode = findContentContainer(node);
+    if (contentNode) state.pending.add(contentNode);
     if (!state.flushTimer) {
       state.flushTimer = window.setTimeout(flushQueue, 30);
     }
@@ -399,7 +554,7 @@
     state.flushTimer = 0;
     const nodes = Array.from(state.pending);
     state.pending.clear();
-    nodes.forEach((node) => processMessage(node));
+    nodes.forEach((node) => processCandidate(node));
   }
 
   function startObserver() {
@@ -407,17 +562,24 @@
     state.observed = true;
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
+        enqueue(mutation.target);
         mutation.addedNodes.forEach((node) => {
-          if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
           enqueue(node);
-          if (node.querySelectorAll) {
+          if (node && node.nodeType === Node.ELEMENT_NODE && node.querySelectorAll) {
+            node.querySelectorAll(CONTENT_SELECTOR).forEach((contentNode) => enqueue(contentNode));
             node.querySelectorAll(MESSAGE_SELECTOR).forEach((messageNode) => enqueue(messageNode));
           }
         });
       });
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     state.observer = observer;
+  }
+
+  function scheduleRecoveryScans() {
+    [0, 80, 240, 750, 1600, 3200].forEach((delay) => {
+      window.setTimeout(() => scanNew({ includeExisting: true }), delay);
+    });
   }
 
   function status() {
@@ -429,6 +591,11 @@
       observed: state.observed,
       lastError: state.lastError,
       lastScanAt: state.lastScanAt,
+      candidateCount: state.candidateCount,
+      lastRawPreview: state.lastRawPreview,
+      lastSkipReason: state.lastSkipReason,
+      lastMatched: state.lastMatched,
+      scanRuns: state.scanRuns,
     };
   }
 
@@ -449,12 +616,12 @@
       "DOMContentLoaded",
       () => {
         startObserver();
-        window.setTimeout(() => scanNew({ includeExisting: true }), 0);
+        scheduleRecoveryScans();
       },
       { once: true }
     );
   } else {
     startObserver();
-    window.setTimeout(() => scanNew({ includeExisting: true }), 0);
+    scheduleRecoveryScans();
   }
 })();
