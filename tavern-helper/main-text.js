@@ -11,7 +11,7 @@
   const VERSION = "0.6.5";
   const MODULE_KIND = "main-text";
   const API_NAME = "DouLuoMainTextHelper";
-  const MARK_TEXT = null;
+  const PAGE_INDEX = null;
   const BUILD_ID = "main-text@0.6.5+05c728bc1a96";
   const STYLE_ID = "douluo-main-text-helper-style";
   const ROOT_SELECTOR = "[data-main-text-root]";
@@ -56,9 +56,12 @@
   const FOREIGN_SHELF_SELECTOR = `[${FOREIGN_SHELF_ATTR}]`;
   const FOREIGN_COMPAT_STYLE_ID = "douluo-foreign-helper-compat-style";
   const FOREIGN_RELOCATE_MIN_INTERVAL_MS = 140;
+  const CONTEXT_HOST_ATTR = "data-dlou-context-host";
+  const CONTEXT_HOST_SELECTOR = `[${CONTEXT_HOST_ATTR}]`;
   const ROOT_SELECTOR_ALL = [
     FOREIGN_HELPER_SELECTOR,
     FOREIGN_SHELF_SELECTOR,
+    CONTEXT_HOST_SELECTOR,
     "[data-cover-root]",
     "[data-main-text-root]",
     "[data-dlou-helper-root]",
@@ -137,6 +140,8 @@
   const CHAT_LIFECYCLE_SCAN_DELAYS = [0, 80, 240, 750, 1600];
   const CHAT_SIGNATURE_POLL_MS = 1000;
   const loadedAt = new Date().toISOString();
+  const FIXED_UI_MESSAGE_ID = 0;
+  const FIXED_UI_MIN_PAGE_COUNT = 2;
 
   const state = {
     mounted: 0,
@@ -162,6 +167,9 @@
     contextProbe: null,
     lastRawSource: "",
     lastRawStrong: false,
+    lastRawMessageId: -1,
+    lastRawSwipeIndex: -1,
+    lastRawPageCount: 0,
     foreignVisualizerDetected: false,
     foreignShelvedCount: 0,
     foreignConflictCount: 0,
@@ -182,6 +190,11 @@
     chatSignaturePollTimer: 0,
     chatSignatureChangeCount: 0,
     observerRetargetCount: 0,
+    contextHostMountCount: 0,
+    contextHostCleanupCount: 0,
+    lastContextHostMessageId: "",
+    lastContextHostSignature: "",
+    lastContextHostRawHash: "",
   };
 
   const doneAttr = `dlou${toDatasetToken(MODULE_KIND)}Mounted`;
@@ -349,6 +362,16 @@
     try {
       if (node.matches && node.matches(FOREIGN_HELPER_SELECTOR)) return true;
       return !!(node.closest && node.closest(FOREIGN_HELPER_SELECTOR));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isContextHostNode(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    try {
+      if (node.matches && node.matches(CONTEXT_HOST_SELECTOR)) return true;
+      return !!(node.closest && node.closest(CONTEXT_HOST_SELECTOR));
     } catch (_) {
       return false;
     }
@@ -561,21 +584,23 @@
   function contextSwipeIndexForNode(node) {
     const index = messageIndexFromNode(node);
     if (index < 0) return -1;
-    const chat = getContextChat();
-    const direct = activeSwipeIndex(chat[index]);
-    if (direct >= 0) return direct;
-    try {
-      const helper = window.TavernHelper;
-      if (helper && typeof helper.getChatMessages === "function") {
-        const messages = helper.getChatMessages(index, { include_swipes: true }) || [];
-        const list = Array.isArray(messages) ? messages : [messages];
-        for (const message of list) {
-          const swipe = activeSwipeIndex(message);
-          if (swipe >= 0) return swipe;
-        }
-      }
-    } catch (_) {}
+    const records = getContextRecordsForMessageId(index);
+    for (const record of records) {
+      const swipe = activeSwipeIndex(record.message);
+      if (swipe >= 0) return swipe;
+    }
     return -1;
+  }
+
+  function contextPageCountForNode(node) {
+    const index = messageIndexFromNode(node);
+    if (index < 0) return 0;
+    const records = getContextRecordsForMessageId(index);
+    for (const record of records) {
+      const count = swipePageCount(record.message);
+      if (count > 0) return count;
+    }
+    return 0;
   }
 
   function mainTextMessageCacheKey(messageNode, rawInfo = null) {
@@ -622,7 +647,7 @@
   }
 
   function mountHash(raw, capture = "") {
-    return stableHash(`${MODULE_KIND}\n${capture || ""}\n${raw || ""}`);
+    return stableHash(`${MODULE_KIND}\n${PAGE_INDEX == null ? "" : PAGE_INDEX}\n${capture || ""}\n${raw || ""}`);
   }
 
   function mountHashFromRaw(raw) {
@@ -657,6 +682,7 @@
     if (!root) throw new Error("Cover root not found");
     if (!prepareMountHost(target, raw, "")) return true;
     root.dataset.dlouHelperRoot = MODULE_KIND;
+    annotateMountedRoot(root, target);
     target.appendChild(root);
     runInlineApp(
       root,
@@ -673,6 +699,7 @@
     if (!root) throw new Error("Character create root not found");
     if (!prepareMountHost(target, raw, "")) return true;
     root.dataset.dlouHelperRoot = MODULE_KIND;
+    annotateMountedRoot(root, target);
     target.appendChild(root);
     runInlineApp(root, APP_JS, "Character create");
     return true;
@@ -728,6 +755,7 @@
     if (!root) throw new Error("Main text root not found");
     if (!prepareMountHost(target, raw, capture)) return true;
     root.dataset.dlouHelperRoot = MODULE_KIND;
+    annotateMountedRoot(root, target);
     const rawNode = root.querySelector("[data-raw-content]");
     if (rawNode) rawNode.innerHTML = capture;
     if (!root.dataset.instanceId) {
@@ -744,12 +772,56 @@
     return mountMainTextWithCapture(target, raw, mainTextCaptureFromRaw(raw));
   }
 
-  function detect(raw) {
+  function isFixedPageModule() {
+    return MODULE_KIND === "cover" || MODULE_KIND === "character-create";
+  }
+
+  function hasFixedPageRoute() {
+    return isFixedPageModule() && Number.isFinite(Number(PAGE_INDEX));
+  }
+
+  function fixedPageIndex() {
+    return hasFixedPageRoute() ? Number(PAGE_INDEX) : -1;
+  }
+
+  function fixedPageRouteMatches(info) {
+    if (!hasFixedPageRoute() || !info) return false;
+    const messageId = normalizeMessageId(info.messageId);
+    const pageIndex = fixedPageIndex();
+    const pageCount = Number(info.pageCount || 0);
+    const swipeIndex = normalizeSwipeIndex(info.swipeIndex, pageCount);
+    return messageId === FIXED_UI_MESSAGE_ID &&
+      pageCount >= FIXED_UI_MIN_PAGE_COUNT &&
+      pageCount > pageIndex &&
+      swipeIndex === pageIndex;
+  }
+
+  function detect(raw, rawInfo = null) {
     const text = String(raw || "");
-    const trimmed = text.trim();
-    if (!trimmed) return false;
     if (MODULE_KIND === "main-text") return Boolean(mainTextCaptureFromRaw(text));
-    return trimmed.includes(MARK_TEXT);
+    return fixedPageRouteMatches(rawInfo);
+  }
+
+  function routeMissReason(rawInfo, raw) {
+    if (MODULE_KIND === "main-text") return raw ? "main-text-missing-content" : "empty-raw";
+    if (!hasFixedPageRoute()) return "route-disabled";
+    if (!rawInfo) return "route-info-missing";
+    const messageId = normalizeMessageId(rawInfo.messageId);
+    const pageIndex = fixedPageIndex();
+    const pageCount = Number(rawInfo.pageCount || 0);
+    const swipeIndex = normalizeSwipeIndex(rawInfo.swipeIndex, pageCount);
+    if (messageId !== FIXED_UI_MESSAGE_ID) return "fixed-message-mismatch";
+    if (pageCount < FIXED_UI_MIN_PAGE_COUNT || pageCount <= pageIndex) return "fixed-page-missing";
+    if (swipeIndex !== pageIndex) return "fixed-page-inactive";
+    return raw ? "route-mismatch" : "empty-raw";
+  }
+
+  function annotateMountedRoot(root, target) {
+    if (!root || !root.dataset) return;
+    if (hasFixedPageRoute()) root.dataset.dlouPageIndex = String(PAGE_INDEX);
+    const messageNode = findMessageNode(target) || target;
+    const messageId = messageIndexFromNode(messageNode);
+    if (messageId >= 0) root.dataset.dlouMessageId = String(messageId);
   }
 
   function mount(target, raw) {
@@ -833,6 +905,7 @@
   }
 
   function editableSourceTextFrom(node) {
+    if (MODULE_KIND !== "main-text") return "";
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
     if (isForeignHelperNode(node)) return "";
     const controls = [];
@@ -846,19 +919,13 @@
       const value = control.matches && control.matches("[contenteditable='true']")
         ? control.textContent
         : control.value;
-      const preferred = preferModuleRaw(value, value);
+      const preferred = preferRawText(value, value);
       if (detect(preferred)) return preferred;
     }
     return "";
   }
 
-  function markerOnly(value) {
-    const text = String(value || "");
-    if (MARK_TEXT && text.includes(MARK_TEXT)) return MARK_TEXT;
-    return "";
-  }
-
-  function preferModuleRaw(text, html) {
+  function preferRawText(text, html) {
     const plain = String(text || "");
     const markup = String(html || "");
     if (MODULE_KIND === "main-text") {
@@ -866,16 +933,7 @@
       if (mainTextCaptureFromRaw(markup)) return markup;
       return plain || markup;
     }
-    const plainMarker = markerOnly(plain);
-    if (plainMarker) return plainMarker;
-    const markupMarker = markerOnly(markup);
-    if (markupMarker) return markupMarker;
     return plain || markup;
-  }
-
-  function normalizeRawForModule(raw) {
-    if (MODULE_KIND === "main-text") return raw;
-    return markerOnly(raw) || raw;
   }
 
   function messageIndexFromNode(node) {
@@ -906,10 +964,10 @@
       if (editableText) return editableText;
     }
     if (content) {
-      return preferModuleRaw(contentText(content), cleanedInnerHtml(content));
+      return preferRawText(contentText(content), cleanedInnerHtml(content));
     }
     if (node && node.nodeType === Node.ELEMENT_NODE && !isIgnoredTextElement(node) && !isForeignHelperNode(node)) {
-      return preferModuleRaw(contentText(node), cleanedInnerHtml(node));
+      return preferRawText(contentText(node), cleanedInnerHtml(node));
     }
     return "";
   }
@@ -974,80 +1032,117 @@
     return out;
   }
 
-  function pushMessage(out, message, source) {
-    if (!message) return;
-    out.push({ message, source });
+  function normalizeMessageId(value) {
+    if (!Number.isFinite(Number(value))) return -1;
+    const id = Math.trunc(Number(value));
+    return id >= 0 ? id : -1;
   }
 
-  function pushMessageList(out, messages, source) {
+  function messageIdFromMessage(message, fallback = -1) {
+    if (message && typeof message === "object") {
+      const keys = ["message_id", "messageId", "mesid", "id", "index"];
+      for (const key of keys) {
+        const id = normalizeMessageId(message[key]);
+        if (id >= 0) return id;
+      }
+    }
+    return normalizeMessageId(fallback);
+  }
+
+  function pushMessage(out, message, source, messageId = -1) {
+    if (!message) return;
+    out.push({
+      message,
+      source,
+      messageId: messageIdFromMessage(message, messageId),
+    });
+  }
+
+  function pushMessageList(out, messages, source, messageId = -1) {
     if (!messages) return;
     if (!Array.isArray(messages)) {
-      pushMessage(out, messages, source);
+      pushMessage(out, messages, source, messageId);
       return;
     }
-    messages.forEach((message, index) => pushMessage(out, message, `${source}[${index}]`));
+    messages.forEach((message, index) => {
+      const fallback = messages.length === 1 ? messageId : index;
+      pushMessage(out, message, `${source}[${index}]`, fallback);
+    });
   }
 
-  function getContextRecords(index) {
-    const out = [];
-    const ids = [];
-    if (Number.isFinite(index) && index >= 0) ids.push(index);
-    ids.push(0);
+  function hostContext(host) {
+    try {
+      return host && host.SillyTavern && typeof host.SillyTavern.getContext === "function"
+        ? host.SillyTavern.getContext()
+        : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function contextProbeIdsForHosts() {
+    const ids = [0];
     for (const host of hostWindows()) {
       try {
         const helper = host.TavernHelper;
         if (helper && typeof helper.getCurrentMessageId === "function") {
-          const id = Number(helper.getCurrentMessageId());
-          if (Number.isFinite(id)) ids.push(id);
+          const id = normalizeMessageId(helper.getCurrentMessageId());
+          if (id >= 0) ids.push(id);
         }
       } catch (_) {}
       try {
         const helper = host.TavernHelper;
         if (helper && typeof helper.getLastMessageId === "function") {
-          const id = Number(helper.getLastMessageId());
-          if (Number.isFinite(id)) ids.push(id);
+          const id = normalizeMessageId(helper.getLastMessageId());
+          if (id >= 0) ids.push(id);
         }
       } catch (_) {}
     }
+    return Array.from(new Set(ids));
+  }
 
+  function pushHelperMessageById(out, host, id) {
+    try {
+      const helper = host.TavernHelper;
+      if (helper && typeof helper.getChatMessages === "function") {
+        pushMessageList(
+          out,
+          helper.getChatMessages(id, { include_swipes: true }) || [],
+          `TavernHelper.getChatMessages(${id})`,
+          id
+        );
+      }
+    } catch (_) {}
+  }
+
+  function pushContextChatById(out, host, id) {
+    const context = hostContext(host);
+    if (!context || !Array.isArray(context.chat)) return;
+    pushMessage(out, context.chat[id], `SillyTavern.context.chat[${id}]`, id);
+  }
+
+  function getContextRecordsForMessageId(index) {
+    const out = [];
+    const id = normalizeMessageId(index);
+    if (id < 0) return out;
     for (const host of hostWindows()) {
-      try {
-        const helper = host.TavernHelper;
-        if (helper && typeof helper.getChatMessages === "function") {
-          Array.from(new Set(ids)).forEach((id) => {
-            try {
-              pushMessageList(out, helper.getChatMessages(id, { include_swipes: true }) || [], `TavernHelper.getChatMessages(${id})`);
-            } catch (_) {}
-          });
-        }
-      } catch (_) {}
-      try {
-        const context =
-          host.SillyTavern && typeof host.SillyTavern.getContext === "function"
-            ? host.SillyTavern.getContext()
-            : null;
-        if (context && Array.isArray(context.chat)) {
-          pushMessageList(out, context.chat, "SillyTavern.context.chat");
-        }
-      } catch (_) {}
+      pushHelperMessageById(out, host, id);
+      pushContextChatById(out, host, id);
     }
     return out;
   }
 
-  function getContextChat() {
-    try {
-      if (window.TavernHelper && typeof window.TavernHelper.getChatMessages === "function") {
-        return window.TavernHelper.getChatMessages(0, { include_swipes: true }) || [];
+  function getContextProbeRecords() {
+    const out = [];
+    const ids = contextProbeIdsForHosts();
+    for (const host of hostWindows()) {
+      ids.forEach((id) => pushHelperMessageById(out, host, id));
+      const context = hostContext(host);
+      if (context && Array.isArray(context.chat)) {
+        pushMessageList(out, context.chat, "SillyTavern.context.chat");
       }
-    } catch (_) {}
-    try {
-      const context =
-        window.SillyTavern && typeof window.SillyTavern.getContext === "function"
-          ? window.SillyTavern.getContext()
-          : null;
-      if (context && Array.isArray(context.chat)) return context.chat;
-    } catch (_) {}
-    return [];
+    }
+    return out;
   }
 
   function messageTextVariants(message) {
@@ -1073,6 +1168,26 @@
       } catch (_) {}
     }
     return out;
+  }
+
+  function swipePageCount(message) {
+    return message && typeof message === "object" && Array.isArray(message.swipes)
+      ? message.swipes.length
+      : 0;
+  }
+
+  function textFromMessageValue(value) {
+    if (value == null) return "";
+    if (typeof value === "string") return value;
+    const values = messageTextVariants(value);
+    return values.length ? values[0] : "";
+  }
+
+  function activeSwipeTextFromMessage(message, activeSwipe) {
+    if (!message || typeof message !== "object" || !Array.isArray(message.swipes)) return "";
+    const index = normalizeSwipeIndex(activeSwipe, message.swipes.length);
+    if (index < 0) return "";
+    return textFromMessageValue(message.swipes[index]);
   }
 
   function pushMessageFields(out, message) {
@@ -1110,66 +1225,158 @@
     return -1;
   }
 
-  function normalizeMessageText(message) {
-    const values = messageTextVariants(message);
-    return values.length ? values[0] : "";
-  }
-
-  function readRawFromContext(node) {
-    return readRawFromContextInfo(node).raw;
-  }
-
-  function readRawFromContextInfo(node) {
+  function readRawFromContextInfo(node, options = {}) {
     const index = messageIndexFromNode(node);
-    const records = getContextRecords(index);
+    const records = index >= 0
+      ? getContextRecordsForMessageId(index)
+      : (options.allowGlobalFallback ? getContextProbeRecords() : []);
+    if (hasFixedPageRoute()) return readFixedPageFromContextInfo(node, records, index);
+    return readMainTextFromContextInfo(node, records, index);
+  }
+
+  function readFixedPageFromContextInfo(node, records, index) {
+    let firstRouteInfo = null;
+    for (const record of records) {
+      const activeSwipe = activeSwipeIndex(record.message);
+      const pageCount = swipePageCount(record.message);
+      const routeInfo = {
+        source: record.source || "context",
+        strong: activeSwipe >= 0,
+        swipeIndex: activeSwipe,
+        pageCount,
+        messageId: record.messageId,
+      };
+      if (!firstRouteInfo) firstRouteInfo = routeInfo;
+      if (!fixedPageRouteMatches(routeInfo)) continue;
+      return {
+        raw: activeSwipeTextFromMessage(record.message, activeSwipe),
+        ...routeInfo,
+      };
+    }
+    if (firstRouteInfo) {
+      return {
+        raw: "",
+        ...firstRouteInfo,
+        source: `${firstRouteInfo.source || "context"}-route-mismatch`,
+      };
+    }
+    return {
+      raw: "",
+      source: index >= 0 ? "context-route-none" : "context-none",
+      strong: false,
+      swipeIndex: -1,
+      pageCount: 0,
+      messageId: index,
+    };
+  }
+
+  function readMainTextFromContextInfo(node, records, index) {
     let firstRaw = null;
     let firstSource = "";
+    let firstMessageId = index;
+    let firstSwipeIndex = contextSwipeIndexForNode(node);
+    let firstPageCount = 0;
     let firstStrongRaw = null;
     let firstStrongSource = "";
+    let firstStrongMessageId = index;
+    let firstStrongSwipeIndex = contextSwipeIndexForNode(node);
+    let firstStrongPageCount = 0;
 
     for (const record of records) {
       const activeSwipe = activeSwipeIndex(record.message);
+      const pageCount = swipePageCount(record.message);
       const strong = activeSwipe >= 0;
+      const routeInfo = {
+        source: record.source || "context",
+        strong,
+        swipeIndex: activeSwipe,
+        pageCount,
+        messageId: record.messageId,
+      };
       const variants = messageTextVariants(record.message);
       for (const value of variants) {
-        const preferred = normalizeRawForModule(preferModuleRaw(value, value));
+        const preferred = preferRawText(value, value);
         if (!preferred) continue;
         if (firstRaw == null) {
           firstRaw = preferred;
           firstSource = record.source || "context";
+          firstMessageId = record.messageId;
+          firstSwipeIndex = activeSwipe;
+          firstPageCount = pageCount;
         }
         if (strong && firstStrongRaw == null) {
           firstStrongRaw = preferred;
           firstStrongSource = record.source || "context-active-swipe";
+          firstStrongMessageId = record.messageId;
+          firstStrongSwipeIndex = activeSwipe;
+          firstStrongPageCount = pageCount;
         }
-        if (detect(preferred)) {
+        if (detect(preferred, routeInfo)) {
           return {
             raw: preferred,
-            source: record.source || "context",
-            strong,
-            swipeIndex: activeSwipe,
+            ...routeInfo,
           };
         }
       }
     }
 
     if (firstStrongRaw != null) {
-      return { raw: firstStrongRaw, source: firstStrongSource, strong: true, swipeIndex: contextSwipeIndexForNode(node) };
+      return {
+        raw: firstStrongRaw,
+        source: firstStrongSource,
+        strong: true,
+        swipeIndex: firstStrongSwipeIndex,
+        pageCount: firstStrongPageCount,
+        messageId: firstStrongMessageId,
+      };
     }
     if (firstRaw != null) {
-      return { raw: firstRaw, source: firstSource, strong: false, swipeIndex: contextSwipeIndexForNode(node) };
+      return {
+        raw: firstRaw,
+        source: firstSource,
+        strong: false,
+        swipeIndex: firstSwipeIndex,
+        pageCount: firstPageCount,
+        messageId: firstMessageId,
+      };
     }
-    if (index < 0) return { raw: "", source: "context-none", strong: false, swipeIndex: -1 };
-    const chat = getContextChat();
-    const message = chat[index];
-    const raw = normalizeRawForModule(normalizeMessageText(message));
-    return { raw, source: raw ? "context-chat-index" : "context-none", strong: false, swipeIndex: activeSwipeIndex(message) };
+    return {
+      raw: "",
+      source: index >= 0 ? "context-index-none" : "context-none",
+      strong: false,
+      swipeIndex: -1,
+      pageCount: 0,
+      messageId: index,
+    };
   }
 
   function readRawInfo(node, fallbackNode) {
-    const domRaw = normalizeRawForModule(readRawFromDom(node, fallbackNode) || "");
-    if (domRaw) return { raw: domRaw, source: "dom", strong: true, swipeIndex: contextSwipeIndexForNode(fallbackNode || node) };
-    return readRawFromContextInfo(fallbackNode || node);
+    const contextNode = fallbackNode || node;
+    if (hasFixedPageRoute()) {
+      const contextInfo = readRawFromContextInfo(contextNode, { allowGlobalFallback: isContextHostNode(contextNode) });
+      if (fixedPageRouteMatches(contextInfo)) return contextInfo;
+      const domInfo = {
+        raw: "",
+        source: "dom-route",
+        strong: false,
+        swipeIndex: contextSwipeIndexForNode(contextNode),
+        pageCount: contextPageCountForNode(contextNode),
+        messageId: messageIndexFromNode(contextNode),
+      };
+      return fixedPageRouteMatches(domInfo) ? domInfo : contextInfo;
+    }
+    const domRaw = readRawFromDom(node, fallbackNode) || "";
+    if (domRaw) {
+      return {
+        raw: domRaw,
+        source: "dom",
+        strong: true,
+        swipeIndex: contextSwipeIndexForNode(contextNode),
+        pageCount: contextPageCountForNode(contextNode),
+        messageId: messageIndexFromNode(contextNode),
+      };
+    }
+    return readRawFromContextInfo(contextNode, { allowGlobalFallback: isContextHostNode(contextNode) });
   }
 
   function readRaw(node, fallbackNode) {
@@ -1177,27 +1384,231 @@
   }
 
   function probeContextForModule() {
-    const records = getContextRecords(-1);
+    const records = getContextProbeRecords();
     const result = {
       matched: false,
       recordCount: records.length,
       source: "",
+      messageId: -1,
+      swipeIndex: -1,
+      pageCount: 0,
+      strong: false,
+      raw: "",
       rawPreview: "",
     };
     for (const record of records) {
+      const activeSwipe = activeSwipeIndex(record.message);
+      const pageCount = swipePageCount(record.message);
+      const routeInfo = {
+        source: record.source || "",
+        messageId: record.messageId,
+        swipeIndex: activeSwipe,
+        pageCount,
+        strong: activeSwipe >= 0,
+      };
+      if (hasFixedPageRoute()) {
+        if (!result.rawPreview) result.rawPreview = preview(activeSwipeTextFromMessage(record.message, activeSwipe));
+        if (!fixedPageRouteMatches(routeInfo)) continue;
+        const raw = activeSwipeTextFromMessage(record.message, activeSwipe);
+        result.matched = true;
+        result.source = routeInfo.source;
+        result.messageId = routeInfo.messageId;
+        result.swipeIndex = routeInfo.swipeIndex;
+        result.pageCount = routeInfo.pageCount;
+        result.strong = routeInfo.strong;
+        result.raw = raw;
+        result.rawPreview = preview(raw);
+        return result;
+      }
       const variants = messageTextVariants(record.message);
       for (const value of variants) {
-        const preferred = normalizeRawForModule(preferModuleRaw(value, value));
+        const preferred = preferRawText(value, value);
         if (!result.rawPreview && preferred) result.rawPreview = preview(preferred);
-        if (detect(preferred)) {
+        if (detect(preferred, routeInfo)) {
           result.matched = true;
           result.source = record.source || "";
+          result.messageId = record.messageId;
+          result.swipeIndex = activeSwipe;
+          result.pageCount = pageCount;
+          result.strong = activeSwipe >= 0;
+          result.raw = preferred;
           result.rawPreview = preview(preferred);
           return result;
         }
       }
     }
     return result;
+  }
+
+  function contextHostDatasetMatches(host, probe, rawHash, signature) {
+    if (!host || !host.dataset) return false;
+    return host.dataset.dlouContextModule === MODULE_KIND &&
+      host.dataset.dlouContextMessageId === String(probe.messageId) &&
+      host.dataset.dlouContextRawHash === rawHash &&
+      host.dataset.dlouContextSignature === signature;
+  }
+
+  function contextHostsForModule() {
+    const out = [];
+    hostDocuments().forEach((entry) => {
+      try {
+        entry.document.querySelectorAll(CONTEXT_HOST_SELECTOR).forEach((node) => {
+          if (node.dataset && node.dataset.dlouContextModule === MODULE_KIND) out.push(node);
+        });
+      } catch (_) {}
+    });
+    return out;
+  }
+
+  function findChatRootForContextHost() {
+    for (const entry of hostDocuments()) {
+      try {
+        const root = entry.document.querySelector("#chat");
+        if (root) return root;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function createContextHost(chatRoot, probe, rawHash, signature) {
+    const doc = ownerDocumentOf(chatRoot);
+    const host = doc.createElement("section");
+    host.className = "dlou-context-host";
+    host.setAttribute(CONTEXT_HOST_ATTR, MODULE_KIND);
+    host.setAttribute("data-dlou-message", "");
+    host.setAttribute("data-message-id", String(probe.messageId));
+    host.dataset.dlouContextModule = MODULE_KIND;
+    host.dataset.dlouContextMessageId = String(probe.messageId);
+    host.dataset.dlouContextRawHash = rawHash;
+    host.dataset.dlouContextSignature = signature;
+    host.dataset.dlouContextSource = probe.source || "";
+
+    const content = doc.createElement("div");
+    content.className = "dlou-context-content";
+    content.setAttribute("data-dlou-message-content", "");
+    host.appendChild(content);
+    const messageId = normalizeMessageId(probe.messageId);
+    const before = messageId >= 0 && chatRoot.querySelectorAll
+      ? Array.from(chatRoot.querySelectorAll(MESSAGE_SELECTOR)).find((node) => {
+        if (isContextHostNode(node) || isForeignHelperNode(node)) return false;
+        const id = messageIndexFromNode(node);
+        return id >= 0 && id > messageId;
+      })
+      : null;
+    if (before && before.parentNode === chatRoot) {
+      chatRoot.insertBefore(host, before);
+    } else {
+      chatRoot.appendChild(host);
+    }
+    return host;
+  }
+
+  function ensureContextHost(probe) {
+    if (!probe || !probe.matched) return null;
+    const rawHash = mountHashFromRaw(probe.raw);
+    const signature = currentChatSignature();
+    const hosts = contextHostsForModule();
+    const existing = hosts.find((host) => contextHostDatasetMatches(host, probe, rawHash, signature));
+    if (existing) return existing;
+    hosts.forEach((host) => {
+      if (!host.parentNode) return;
+      try {
+        host.parentNode.removeChild(host);
+        state.contextHostCleanupCount += 1;
+      } catch (_) {}
+    });
+    const chatRoot = findChatRootForContextHost();
+    if (!chatRoot) return null;
+    return createContextHost(chatRoot, probe, rawHash, signature);
+  }
+
+  function hasRealCandidateForContext(candidates, messageId) {
+    const id = normalizeMessageId(messageId);
+    if (id < 0) return false;
+    return candidates.some((node) => {
+      if (isContextHostNode(node)) return false;
+      const messageNode = findMessageNode(node) || node;
+      return messageIndexFromNode(messageNode) === id;
+    });
+  }
+
+  function hasRealMountedModuleCandidate(candidates) {
+    return candidates.some((node) => {
+      if (isContextHostNode(node)) return false;
+      const messageNode = findMessageNode(node) || node;
+      const target = findContentContainer(node) || findContentContainer(messageNode) || messageNode;
+      const mountedRoot = findMountedUiRoot(target);
+      const mountedModule = mountedRoot && (mountedRoot.getAttribute("data-dlou-helper-root") || inferMountedModule(mountedRoot));
+      return mountedModule === MODULE_KIND;
+    });
+  }
+
+  function cleanupContextHostsForCandidates(candidates) {
+    const ids = new Set();
+    const removeAllForModule = hasRealMountedModuleCandidate(candidates);
+    candidates.forEach((node) => {
+      if (isContextHostNode(node)) return;
+      const messageNode = findMessageNode(node) || node;
+      const id = messageIndexFromNode(messageNode);
+      if (id >= 0) ids.add(String(id));
+    });
+    if (!ids.size && !removeAllForModule) return 0;
+    let removed = 0;
+    contextHostsForModule().forEach((host) => {
+      if (!host.parentNode || !host.dataset) return;
+      if (!removeAllForModule && !ids.has(host.dataset.dlouContextMessageId || "")) return;
+      try {
+        host.parentNode.removeChild(host);
+        removed += 1;
+      } catch (_) {}
+    });
+    if (removed) state.contextHostCleanupCount += removed;
+    return removed;
+  }
+
+  function mountFromContextProbe(candidates) {
+    const probe = state.contextProbe && state.contextProbe.matched
+      ? state.contextProbe
+      : probeContextForModule();
+    state.contextProbe = probe;
+    if (!probe.matched) return 0;
+    if (hasRealMountedModuleCandidate(candidates)) return 0;
+    if (hasRealCandidateForContext(candidates, probe.messageId)) return 0;
+    const host = ensureContextHost(probe);
+    if (!host) {
+      state.lastSkipReason = "context-host-unavailable";
+      return 0;
+    }
+    const target = findContentContainer(host) || host;
+    const mountedRoot = findMountedUiRoot(target);
+    const mountedModule = mountedRoot && (mountedRoot.getAttribute("data-dlou-helper-root") || inferMountedModule(mountedRoot));
+    const rawHash = mountHashFromRaw(probe.raw);
+    if (mountedModule === MODULE_KIND && target.dataset[doneAttr] === "1" && target.dataset[hashAttr] === rawHash) {
+      state.lastSkipReason = "context-host-already-mounted";
+      return 0;
+    }
+    state.lastRawSource = probe.source || "context";
+    state.lastRawStrong = Boolean(probe.strong);
+    state.lastRawMessageId = normalizeMessageId(probe.messageId);
+    state.lastRawSwipeIndex = normalizeSwipeIndex(probe.swipeIndex, probe.pageCount || 0);
+    state.lastRawPageCount = Number(probe.pageCount || 0);
+    state.lastRawPreview = probe.rawPreview || preview(probe.raw);
+    state.lastMatched = state.lastRawPreview;
+    state.lastContextHostMessageId = String(probe.messageId);
+    state.lastContextHostSignature = currentChatSignature();
+    state.lastContextHostRawHash = rawHash;
+    const didMount = mount(target, probe.raw);
+    if (!didMount) {
+      state.lastSkipReason = state.lastError ? "context-host-mount-failed" : "context-host-mount-returned-false";
+      return 0;
+    }
+    state.mounted += 1;
+    state.contextHostMountCount += 1;
+    state.lastSkipReason = "context-host-rendered";
+    rememberMainTextRender(host, target, probe.raw, probe);
+    rememberCandidateSample(makeCandidateSample(host, host, target, probe.raw, state.lastSkipReason, true));
+    notify("rendered from context");
+    return 1;
   }
 
   function preview(value) {
@@ -1301,6 +1712,9 @@
       rawPreview: preview(raw),
       rawSource: state.lastRawSource,
       rawStrong: state.lastRawStrong,
+      rawMessageId: state.lastRawMessageId,
+      rawSwipeIndex: state.lastRawSwipeIndex,
+      rawPageCount: state.lastRawPageCount,
       skipReason: skipReason || "",
       matched: Boolean(matched),
     };
@@ -1340,10 +1754,16 @@
     const previousRawPreview = state.lastRawPreview;
     const previousRawSource = state.lastRawSource;
     const previousRawStrong = state.lastRawStrong;
+    const previousRawMessageId = state.lastRawMessageId;
+    const previousRawSwipeIndex = state.lastRawSwipeIndex;
+    const previousRawPageCount = state.lastRawPageCount;
     state.lastRawSource = rawInfo.source || "";
     state.lastRawStrong = Boolean(rawInfo.strong);
+    state.lastRawMessageId = normalizeMessageId(rawInfo.messageId);
+    state.lastRawSwipeIndex = normalizeSwipeIndex(rawInfo.swipeIndex, rawInfo.pageCount || 0);
+    state.lastRawPageCount = Number(rawInfo.pageCount || 0);
     state.lastRawPreview = preview(raw);
-    if (!detect(raw)) {
+    if (!detect(raw, rawInfo)) {
       if (mountedModule === MODULE_KIND) {
         if (!rawInfo.strong) {
           state.lastSkipReason = raw ? "mounted-weak-context-ignored" : "mounted-empty-raw";
@@ -1351,6 +1771,9 @@
           state.lastRawPreview = previousRawPreview;
           state.lastRawSource = previousRawSource;
           state.lastRawStrong = previousRawStrong;
+          state.lastRawMessageId = previousRawMessageId;
+          state.lastRawSwipeIndex = previousRawSwipeIndex;
+          state.lastRawPageCount = previousRawPageCount;
           return false;
         }
         if (shouldPreserveMountedMainTextMiss(messageNode, target, rawInfo, raw)) {
@@ -1376,7 +1799,7 @@
         rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
         return true;
       }
-      state.lastSkipReason = raw ? "no-module-marker" : "empty-raw";
+      state.lastSkipReason = routeMissReason(rawInfo, raw);
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
       return false;
     }
@@ -1450,6 +1873,9 @@
     return Array.from(nodes).sort((a, b) => {
       const aMsg = findMessageNode(a) || a;
       const bMsg = findMessageNode(b) || b;
+      const aContext = isContextHostNode(aMsg) || isContextHostNode(a);
+      const bContext = isContextHostNode(bMsg) || isContextHostNode(b);
+      if (aContext !== bContext) return aContext ? 1 : -1;
       return messageIndexFromNode(aMsg) - messageIndexFromNode(bMsg);
     });
   }
@@ -1459,9 +1885,9 @@
     const candidates = collectCandidates(options.root || null);
     state.candidateCount = candidates.length;
     state.scanRuns += 1;
+    state.contextProbe = probeContextForModule();
     if (!candidates.length) {
       state.lastSkipReason = state.accessibleHostDocumentCount ? "no-dom-candidates" : "no-accessible-dom";
-      state.contextProbe = probeContextForModule();
       if (state.contextProbe.rawPreview) state.lastRawPreview = state.contextProbe.rawPreview;
     }
     const ordered = latestOnly ? candidates.reverse() : candidates;
@@ -1474,6 +1900,16 @@
         if (latestOnly) break;
       }
       if (state.lastMatched && state.lastMatched !== before) matched += 1;
+    }
+    if (candidates.length) {
+      cleanupContextHostsForCandidates(candidates);
+    }
+    if (!rendered) {
+      const contextRendered = mountFromContextProbe(candidates);
+      if (contextRendered) {
+        rendered += contextRendered;
+        matched += contextRendered;
+      }
     }
     state.lastScanAt = Date.now();
     const result = {
@@ -1749,10 +2185,23 @@
     return count;
   }
 
+  function queryContextHostCount() {
+    let count = 0;
+    hostDocuments().forEach((entry) => {
+      try {
+        entry.document.querySelectorAll(CONTEXT_HOST_SELECTOR).forEach((node) => {
+          if (node.dataset && node.dataset.dlouContextModule === MODULE_KIND) count += 1;
+        });
+      } catch (_) {}
+    });
+    return count;
+  }
+
   function status() {
     const meta = lockedMeta();
     const foreignNodeCount = queryHostCount(FOREIGN_HELPER_SELECTOR);
     const foreignShelfCount = queryHostCount(FOREIGN_SHELF_SELECTOR);
+    const contextHostCount = queryContextHostCount();
     return {
       script: SCRIPT_NAME,
       version: VERSION,
@@ -1780,6 +2229,9 @@
       lastRawPreview: state.lastRawPreview,
       lastRawSource: state.lastRawSource,
       lastRawStrong: state.lastRawStrong,
+      lastRawMessageId: state.lastRawMessageId,
+      lastRawSwipeIndex: state.lastRawSwipeIndex,
+      lastRawPageCount: state.lastRawPageCount,
       lastSkipReason: state.lastSkipReason,
       lastMatched: state.lastMatched,
       mountAttempts: state.mountAttempts,
@@ -1800,6 +2252,12 @@
       lastLifecycleScanReason: state.lastLifecycleScanReason,
       lastChatSignature: state.lastChatSignature,
       chatSignatureChangeCount: state.chatSignatureChangeCount,
+      contextHostCount,
+      contextHostMountCount: state.contextHostMountCount,
+      contextHostCleanupCount: state.contextHostCleanupCount,
+      lastContextHostMessageId: state.lastContextHostMessageId,
+      lastContextHostSignature: state.lastContextHostSignature,
+      lastContextHostRawHash: state.lastContextHostRawHash,
       lastMainTextStreamReason: state.lastMainTextStreamReason,
       lastMainTextStreamAt: state.lastMainTextStreamAt,
       mainTextStreamPreserveCount: state.mainTextStreamPreserveCount,
