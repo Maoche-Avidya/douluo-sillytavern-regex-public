@@ -244,9 +244,10 @@
 
   function detect(raw) {
     const text = String(raw || "");
-    if (!text.trim()) return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
     if (MODULE_KIND === "main-text") return MAIN_TEXT_RE.test(text);
-    return text.trim() === MARK_TEXT;
+    return trimmed === MARK_TEXT || trimmed.startsWith(MARK_TEXT);
   }
 
   function mount(target, raw) {
@@ -351,7 +352,8 @@
   }
 
   function processMessage(messageNode) {
-    if (!messageNode || messageNode.querySelector(ROOT_SELECTOR_ALL)) return false;
+    if (!messageNode) return false;
+    if (messageNode.querySelector(`[data-dlou-helper-root="${MODULE_KIND}"]`)) return false;
     const target = findContentContainer(messageNode) || messageNode;
     const raw = readRaw(messageNode);
     if (!detect(raw)) return false;
