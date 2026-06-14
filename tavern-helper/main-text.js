@@ -115,6 +115,8 @@
     accessibleHostDocumentCount: 0,
     hostDomAccessError: "",
     contextProbe: null,
+    lastRawSource: "",
+    lastRawStrong: false,
   };
 
   const doneAttr = `dlou${toDatasetToken(MODULE_KIND)}Mounted`;
@@ -210,12 +212,43 @@
     while (element.firstChild) element.removeChild(element.firstChild);
   }
 
+  function clearMountState(target) {
+    if (!target || !target.dataset) return;
+    [
+      "dlouCoverMounted",
+      "dlouCoverHash",
+      "dlouCharacterCreateMounted",
+      "dlouCharacterCreateHash",
+      "dlouMainTextMounted",
+      "dlouMainTextHash",
+      "dlouHelperModule",
+    ].forEach((key) => {
+      try {
+        delete target.dataset[key];
+      } catch (_) {}
+    });
+  }
+
+  function mountHash(raw, capture = "") {
+    return stableHash(`${MODULE_KIND}\n${capture || ""}\n${raw || ""}`);
+  }
+
+  function mountHashFromRaw(raw) {
+    let capture = "";
+    if (MODULE_KIND === "main-text") {
+      const match = String(raw || "").match(MAIN_TEXT_RE);
+      capture = (match && match[1]) || "";
+    }
+    return mountHash(raw, capture);
+  }
+
   function prepareMountHost(target, raw, capture) {
-    const hash = stableHash(`${MODULE_KIND}\n${capture || ""}\n${raw || ""}`);
+    const hash = mountHash(raw, capture);
     if (target.dataset[doneAttr] === "1" && target.dataset[hashAttr] === hash) {
       return null;
     }
     clearElement(target);
+    clearMountState(target);
     target.dataset[doneAttr] = "1";
     target.dataset[hashAttr] = hash;
     target.dataset.dlouHelperModule = MODULE_KIND;
@@ -681,23 +714,63 @@
   }
 
   function readRawFromContext(node) {
+    return readRawFromContextInfo(node).raw;
+  }
+
+  function readRawFromContextInfo(node) {
     const index = messageIndexFromNode(node);
     const records = getContextRecords(index);
+    let firstRaw = null;
+    let firstSource = "";
+    let firstStrongRaw = null;
+    let firstStrongSource = "";
+
     for (const record of records) {
+      const activeSwipe = activeSwipeIndex(record.message);
+      const strong = activeSwipe >= 0;
       const variants = messageTextVariants(record.message);
       for (const value of variants) {
         const preferred = normalizeRawForModule(preferModuleRaw(value, value));
-        if (detect(preferred)) return preferred;
+        if (!preferred) continue;
+        if (firstRaw == null) {
+          firstRaw = preferred;
+          firstSource = record.source || "context";
+        }
+        if (strong && firstStrongRaw == null) {
+          firstStrongRaw = preferred;
+          firstStrongSource = record.source || "context-active-swipe";
+        }
+        if (detect(preferred)) {
+          return {
+            raw: preferred,
+            source: record.source || "context",
+            strong,
+          };
+        }
       }
     }
-    if (index < 0) return "";
+
+    if (firstStrongRaw != null) {
+      return { raw: firstStrongRaw, source: firstStrongSource, strong: true };
+    }
+    if (firstRaw != null) {
+      return { raw: firstRaw, source: firstSource, strong: false };
+    }
+    if (index < 0) return { raw: "", source: "context-none", strong: false };
     const chat = getContextChat();
     const message = chat[index];
-    return normalizeMessageText(message);
+    const raw = normalizeRawForModule(normalizeMessageText(message));
+    return { raw, source: raw ? "context-chat-index" : "context-none", strong: false };
+  }
+
+  function readRawInfo(node, fallbackNode) {
+    const domRaw = normalizeRawForModule(readRawFromDom(node, fallbackNode) || "");
+    if (domRaw) return { raw: domRaw, source: "dom", strong: true };
+    return readRawFromContextInfo(fallbackNode || node);
   }
 
   function readRaw(node, fallbackNode) {
-    return normalizeRawForModule(readRawFromDom(node, fallbackNode) || readRawFromContext(fallbackNode || node) || "");
+    return readRawInfo(node, fallbackNode).raw;
   }
 
   function probeContextForModule() {
@@ -821,6 +894,8 @@
       htmlPreview: preview(candidate && candidate.innerHTML),
       editablePreview: editablePreviewFrom(candidate),
       rawPreview: preview(raw),
+      rawSource: state.lastRawSource,
+      rawStrong: state.lastRawStrong,
       skipReason: skipReason || "",
       matched: Boolean(matched),
     };
@@ -835,23 +910,49 @@
     }
     const messageNode = findMessageNode(candidate) || candidate;
     const target = findContentContainer(candidate) || findContentContainer(messageNode) || messageNode;
+    if (!target) {
+      state.lastSkipReason = "no-target";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
+      return false;
+    }
     const mountedRoot = findMountedUiRoot(target);
     const mountedModule = mountedRoot && (mountedRoot.getAttribute("data-dlou-helper-root") || inferMountedModule(mountedRoot));
-    if (!target || mountedModule === MODULE_KIND) {
-      state.lastSkipReason = "already-mounted";
-      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
-      return false;
-    }
-    if (mountedRoot) {
-      state.lastSkipReason = "other-ui-mounted";
-      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
-      return false;
-    }
-    const raw = readRaw(target, messageNode);
+    const rawInfo = readRawInfo(target, messageNode);
+    const raw = rawInfo.raw;
+    const previousRawPreview = state.lastRawPreview;
+    const previousRawSource = state.lastRawSource;
+    const previousRawStrong = state.lastRawStrong;
+    state.lastRawSource = rawInfo.source || "";
+    state.lastRawStrong = Boolean(rawInfo.strong);
     state.lastRawPreview = preview(raw);
     if (!detect(raw)) {
+      if (mountedModule === MODULE_KIND) {
+        if (!rawInfo.strong) {
+          state.lastSkipReason = raw ? "mounted-weak-context-ignored" : "mounted-empty-raw";
+          rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
+          state.lastRawPreview = previousRawPreview;
+          state.lastRawSource = previousRawSource;
+          state.lastRawStrong = previousRawStrong;
+          return false;
+        }
+        clearElement(target);
+        clearMountState(target);
+        state.lastSkipReason = raw ? "stale-module-cleared" : "stale-module-empty-raw";
+        rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
+        return false;
+      }
+      if (mountedRoot) {
+        state.lastSkipReason = "other-ui-mounted";
+        rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
+        return false;
+      }
       state.lastSkipReason = raw ? "no-module-marker" : "empty-raw";
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
+      return false;
+    }
+    if (mountedModule === MODULE_KIND && target.dataset[doneAttr] === "1" && target.dataset[hashAttr] === mountHashFromRaw(raw)) {
+      state.lastSkipReason = "already-mounted";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, true));
       return false;
     }
     state.lastMatched = state.lastRawPreview;
@@ -1057,6 +1158,8 @@
       hostDomAccessError: state.hostDomAccessError,
       contextProbe: state.contextProbe,
       lastRawPreview: state.lastRawPreview,
+      lastRawSource: state.lastRawSource,
+      lastRawStrong: state.lastRawStrong,
       lastSkipReason: state.lastSkipReason,
       lastMatched: state.lastMatched,
       mountAttempts: state.mountAttempts,
