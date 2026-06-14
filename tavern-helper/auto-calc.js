@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.6
+// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.6.1
 // @module       tavern-helper/auto-calc
-// @version      @0.6
+// @version      @0.6.1
 // @source       tavern-helper-scripts/auto-calc/dist/latest.json
 "use strict";
 
@@ -121,6 +121,23 @@
     let lastInputHash = '';
     let pendingAutoRecalc = null;
     let tableUpdateCallback = null;
+    const VISUALIZER_ROOT_SELECTOR = [
+        '.acu-wrapper',
+        '.acu-embedded-options-container',
+        '.acu-embedded-dashboard-container',
+        '.auto-card-updater-popup',
+    ].join(',');
+    const VISUALIZER_BUSY_SELECTOR = [
+        '.acu-edit-overlay',
+        '.acu-popup-overlay',
+        '.acu-quick-view-overlay',
+        '.acu-cell-menu',
+        '.acu-menu-backdrop',
+        '.acu-window-overlay',
+        '#acu-btn-save-global:disabled',
+        '.acu-btn-save-mode',
+        '.acu-wrapper .fa-spinner.fa-spin',
+    ].join(',');
 
     function log(...args) {
         if (CONFIG.debug) console.log(`[${SCRIPT_NAME}]`, ...args);
@@ -163,6 +180,33 @@
             } catch (_) {}
         }
         return null;
+    }
+
+    function hostDocuments() {
+        const docs = [];
+        for (const host of hostWindows()) {
+            try {
+                const doc = host.document;
+                if (doc && doc.querySelector && !docs.includes(doc)) docs.push(doc);
+            } catch (_) {}
+        }
+        return docs;
+    }
+
+    function hasDocumentMatch(selector) {
+        for (const doc of hostDocuments()) {
+            try {
+                if (doc.querySelector(selector)) return true;
+            } catch (_) {}
+        }
+        return false;
+    }
+
+    function visualizerCompatState() {
+        return {
+            detected: hasDocumentMatch(VISUALIZER_ROOT_SELECTOR),
+            busy: hasDocumentMatch(VISUALIZER_BUSY_SELECTOR),
+        };
     }
 
     function getDatabaseApi() {
@@ -2742,6 +2786,7 @@
             skipNotify: options.skipNotify ?? quiet,
             silent: options.silent ?? quiet,
             isImportMode: options.isImportMode ?? quiet,
+            source: options.source || 'douluo-auto-calc',
         };
     }
 
@@ -4687,11 +4732,18 @@
 
     function scheduleAutoRecalculate(reason = 'auto', delayMs = 250) {
         if (!autoEnabled() || isWriting) return;
+        const compat = visualizerCompatState();
+        const nextDelay = compat.busy ? Math.max(delayMs, 1200) : delayMs;
         if (pendingAutoRecalc) clearTimeout(pendingAutoRecalc);
         pendingAutoRecalc = setTimeout(() => {
             pendingAutoRecalc = null;
+            if (!autoEnabled() || isWriting) return;
+            if (visualizerCompatState().busy) {
+                scheduleAutoRecalculate(reason, 1200);
+                return;
+            }
             recalculate({ force: true, reason });
-        }, delayMs);
+        }, nextDelay);
     }
 
     function registerTableUpdateListener() {
@@ -4738,6 +4790,7 @@
     }
 
     function getStatus() {
+        const compat = visualizerCompatState();
         return {
             version: VERSION,
             autoEnabled: autoEnabled(),
@@ -4747,6 +4800,8 @@
             intervalMs: CONFIG.autoIntervalMs,
             hasApi: !!(api || getDatabaseApi()),
             lastInputHash,
+            visualizerDetected: compat.detected,
+            visualizerBusy: compat.busy,
         };
     }
 

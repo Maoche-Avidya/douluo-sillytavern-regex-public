@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 封面 @0.6
+// @name         [助手]斗罗大陆 I-IV · Soul Land 封面 @0.6.1
 // @module       tavern-helper/cover
-// @version      @0.6
+// @version      @0.6.1
 // @source       tavern-helper-scripts/cover/dist/latest.json
 "use strict";
 
@@ -38,7 +38,22 @@
     "[data-mes-text]",
     "[data-dlou-message-content]",
   ].join(",");
+  const FOREIGN_HELPER_SELECTOR = [
+    ".acu-wrapper",
+    ".acu-embedded-options-container",
+    ".acu-embedded-dashboard-container",
+    ".acu-edit-overlay",
+    ".acu-popup-overlay",
+    ".acu-quick-view-overlay",
+    ".acu-cell-menu",
+    ".acu-menu-backdrop",
+    ".acu-window",
+    ".acu-window-overlay",
+    ".auto-card-updater-popup",
+    "[id^='acu-']",
+  ].join(",");
   const ROOT_SELECTOR_ALL = [
+    FOREIGN_HELPER_SELECTOR,
     "[data-cover-root]",
     "[data-main-text-root]",
     "[data-dlou-helper-root]",
@@ -212,6 +227,26 @@
     while (element.firstChild) element.removeChild(element.firstChild);
   }
 
+  function isForeignHelperNode(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    try {
+      if (node.matches && node.matches(FOREIGN_HELPER_SELECTOR)) return true;
+      return !!(node.closest && node.closest(FOREIGN_HELPER_SELECTOR));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function containsForeignHelperNode(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    if (isForeignHelperNode(node)) return true;
+    try {
+      return !!(node.querySelector && node.querySelector(FOREIGN_HELPER_SELECTOR));
+    } catch (_) {
+      return false;
+    }
+  }
+
   function clearMountState(target) {
     if (!target || !target.dataset) return;
     [
@@ -246,6 +281,9 @@
     const hash = mountHash(raw, capture);
     if (target.dataset[doneAttr] === "1" && target.dataset[hashAttr] === hash) {
       return null;
+    }
+    if (containsForeignHelperNode(target)) {
+      throw new Error("Refusing to clear target containing a foreign helper UI");
     }
     clearElement(target);
     clearMountState(target);
@@ -372,14 +410,17 @@
 
   function findMessageNode(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return null;
+    if (isForeignHelperNode(node)) return null;
     if (node.matches && node.matches(MESSAGE_SELECTOR)) return node;
     return node.closest ? node.closest(MESSAGE_SELECTOR) : null;
   }
 
   function findContentContainer(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return null;
+    if (isForeignHelperNode(node)) return null;
     if (node.matches && node.matches(CONTENT_SELECTOR)) return node;
-    return node.querySelector ? node.querySelector(CONTENT_SELECTOR) : null;
+    if (!node.querySelector) return null;
+    return Array.from(node.querySelectorAll(CONTENT_SELECTOR)).find((item) => !isForeignHelperNode(item)) || null;
   }
 
   function isIgnoredTextElement(node) {
@@ -414,6 +455,7 @@
 
   function rawAttrsFrom(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    if (isForeignHelperNode(node)) return "";
     for (const attr of RAW_ATTRS) {
       const value = node.getAttribute && node.getAttribute(attr);
       if (value) return value;
@@ -423,7 +465,8 @@
 
   function rawNodeTextFrom(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.querySelector) return "";
-    const rawNode = node.querySelector(RAW_NODE_SELECTOR);
+    if (isForeignHelperNode(node)) return "";
+    const rawNode = Array.from(node.querySelectorAll(RAW_NODE_SELECTOR)).find((item) => !isForeignHelperNode(item));
     if (!rawNode) return "";
     if (rawNode.tagName === "SCRIPT" || rawNode.tagName === "TEMPLATE") {
       return rawNode.textContent || "";
@@ -435,6 +478,7 @@
 
   function editableSourceTextFrom(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    if (isForeignHelperNode(node)) return "";
     const controls = [];
     if (node.matches && node.matches(EDITABLE_SOURCE_SELECTOR)) controls.push(node);
     if (node.querySelectorAll) {
@@ -442,6 +486,7 @@
     }
     for (const control of controls) {
       if (control.closest && control.closest(ROOT_SELECTOR_ALL)) continue;
+      if (isForeignHelperNode(control)) continue;
       const value = control.matches && control.matches("[contenteditable='true']")
         ? control.textContent
         : control.value;
@@ -490,6 +535,7 @@
   }
 
   function readRawFromDom(node, fallbackNode) {
+    if (isForeignHelperNode(node)) return "";
     const content = findContentContainer(node) || findContentContainer(fallbackNode);
     for (const source of [content, node, fallbackNode]) {
       const attrRaw = rawAttrsFrom(source);
@@ -506,7 +552,7 @@
     if (content) {
       return preferModuleRaw(contentText(content), cleanedInnerHtml(content));
     }
-    if (node && node.nodeType === Node.ELEMENT_NODE && !isIgnoredTextElement(node)) {
+    if (node && node.nodeType === Node.ELEMENT_NODE && !isIgnoredTextElement(node) && !isForeignHelperNode(node)) {
       return preferModuleRaw(contentText(node), cleanedInnerHtml(node));
     }
     return "";
@@ -855,6 +901,7 @@
 
   function editablePreviewFrom(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    if (isForeignHelperNode(node)) return "";
     const values = [];
     const controls = [];
     if (node.matches && node.matches(EDITABLE_SOURCE_SELECTOR)) controls.push(node);
@@ -863,6 +910,7 @@
     }
     controls.slice(0, 4).forEach((control) => {
       if (control.closest && control.closest(ROOT_SELECTOR_ALL)) return;
+      if (isForeignHelperNode(control)) return;
       const value = control.matches && control.matches("[contenteditable='true']")
         ? control.textContent
         : control.value;
@@ -908,10 +956,25 @@
       rememberCandidateSample({ skipReason: state.lastSkipReason, matched: false });
       return false;
     }
+    if (isForeignHelperNode(candidate)) {
+      state.lastSkipReason = "foreign-helper";
+      rememberCandidateSample({ skipReason: state.lastSkipReason, matched: false });
+      return false;
+    }
     const messageNode = findMessageNode(candidate) || candidate;
     const target = findContentContainer(candidate) || findContentContainer(messageNode) || messageNode;
     if (!target) {
       state.lastSkipReason = "no-target";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
+      return false;
+    }
+    if (isForeignHelperNode(target)) {
+      state.lastSkipReason = "foreign-target";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
+      return false;
+    }
+    if (containsForeignHelperNode(target)) {
+      state.lastSkipReason = "foreign-helper-in-target";
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
       return false;
     }
@@ -933,6 +996,11 @@
           state.lastRawPreview = previousRawPreview;
           state.lastRawSource = previousRawSource;
           state.lastRawStrong = previousRawStrong;
+          return false;
+        }
+        if (containsForeignHelperNode(target)) {
+          state.lastSkipReason = "stale-module-foreign-helper-preserved";
+          rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, raw, state.lastSkipReason, false));
           return false;
         }
         clearElement(target);
@@ -985,11 +1053,16 @@
 
   function collectCandidatesFromScope(scope, nodes) {
     if (!scope) return;
+    if (isForeignHelperNode(scope)) return;
     if (scope.matches && scope.matches(CONTENT_SELECTOR)) nodes.add(scope);
     if (scope.matches && scope.matches(MESSAGE_SELECTOR)) nodes.add(scope);
     if (scope.querySelectorAll) {
-      scope.querySelectorAll(CONTENT_SELECTOR).forEach((node) => nodes.add(node));
-      scope.querySelectorAll(MESSAGE_SELECTOR).forEach((node) => nodes.add(node));
+      scope.querySelectorAll(CONTENT_SELECTOR).forEach((node) => {
+        if (!isForeignHelperNode(node)) nodes.add(node);
+      });
+      scope.querySelectorAll(MESSAGE_SELECTOR).forEach((node) => {
+        if (!isForeignHelperNode(node)) nodes.add(node);
+      });
     }
   }
 
@@ -1071,6 +1144,7 @@
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (isForeignHelperNode(node)) return;
     if (node.matches && (node.matches(CONTENT_SELECTOR) || node.matches(MESSAGE_SELECTOR))) {
       state.pending.add(node);
     }
