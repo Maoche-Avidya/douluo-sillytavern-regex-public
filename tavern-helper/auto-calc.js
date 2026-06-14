@@ -155,6 +155,7 @@
     let lastInputHash = '';
     let pendingAutoRecalc = null;
     let tableUpdateCallback = null;
+    const preferredWriteTableNames = new Map();
     const VISUALIZER_ROOT_SELECTOR = [
         '.acu-wrapper',
         '.acu-embedded-options-container',
@@ -391,6 +392,15 @@
             || ddlCreatesTable(sheet.sourceData?.ddl || sheet.schema?.ddl || sheet.ddl, tableName);
     }
 
+    function sheetHasExplicitName(sheet, tableName) {
+        if (!sheet || typeof sheet !== 'object') return false;
+        return sheet.name === tableName
+            || sheet.uid === tableName
+            || sheet.tableName === tableName
+            || sheet.sqlTableName === tableName
+            || sheet.physicalName === tableName;
+    }
+
     function getSheet(db, tableName) {
         if (!db || !tableName) return null;
         const candidates = tableNameCandidates(tableName);
@@ -414,18 +424,28 @@
         if (!db || typeof db !== 'object') return false;
         if (db[physical]) return true;
         for (const value of Object.values(db)) {
-            if (sheetMatchesName(value, physical)) return true;
+            if (sheetHasExplicitName(value, physical)) return true;
         }
-        return Array.isArray(db.tables) && db.tables.some(sheet => sheetMatchesName(sheet, physical));
+        return Array.isArray(db.tables) && db.tables.some(sheet => sheetHasExplicitName(sheet, physical));
     }
 
     function writeTableNameCandidates(tableName) {
         const candidates = tableNameCandidates(tableName);
+        const preferred = preferredWriteTableNames.get(tableName);
+        if (preferred && candidates.includes(preferred)) {
+            return [preferred, ...candidates.filter(name => name !== preferred)];
+        }
         const physical = PHYSICAL_TABLE_NAMES[tableName];
         if (physical && shouldPreferPhysicalTableName(tableName)) {
             return [physical, ...candidates.filter(name => name !== physical)];
         }
         return candidates;
+    }
+
+    function rememberWriteTableName(originalName, usedName) {
+        if (originalName && usedName && originalName !== usedName) {
+            preferredWriteTableNames.set(originalName, usedName);
+        }
     }
 
     function missingTables(db, tableNames = REQUIRED_TEMPLATE_TABLES) {
@@ -2879,7 +2899,10 @@
         for (const candidateName of writeTableNameCandidates(tableName)) {
             try {
                 const result = await api.updateRow(candidateName, rowIndex, safeData);
-                if (!apiWriteFailed(result)) return result;
+                if (!apiWriteFailed(result)) {
+                    rememberWriteTableName(tableName, candidateName);
+                    return result;
+                }
                 lastResult = result;
             } catch (error) {
                 if (options.fallbackObject === false) throw error;
@@ -2895,7 +2918,10 @@
                     data: safeData,
                     ...writeMutationOptions(options),
                 });
-                if (!apiWriteFailed(result)) return result;
+                if (!apiWriteFailed(result)) {
+                    rememberWriteTableName(tableName, candidateName);
+                    return result;
+                }
                 lastResult = result;
             }
             return lastResult;
@@ -2912,7 +2938,10 @@
         for (const candidateName of writeTableNameCandidates(tableName)) {
             try {
                 const result = await api.insertRow(candidateName, safeData);
-                if (!apiWriteFailed(result)) return result;
+                if (!apiWriteFailed(result)) {
+                    rememberWriteTableName(tableName, candidateName);
+                    return result;
+                }
                 lastResult = result;
             } catch (error) {
                 if (options.fallbackObject === false) throw error;
@@ -2927,7 +2956,10 @@
                     data: safeData,
                     ...writeMutationOptions(options),
                 });
-                if (!apiWriteFailed(result)) return result;
+                if (!apiWriteFailed(result)) {
+                    rememberWriteTableName(tableName, candidateName);
+                    return result;
+                }
                 lastResult = result;
             }
             return lastResult;
@@ -2944,7 +2976,10 @@
         for (const candidateName of writeTableNameCandidates(tableName)) {
             try {
                 const result = await deleteFn.call(api, candidateName, rowIndex);
-                if (!apiWriteFailed(result)) return result;
+                if (!apiWriteFailed(result)) {
+                    rememberWriteTableName(tableName, candidateName);
+                    return result;
+                }
                 lastResult = result;
             } catch (error) {
                 if (options.fallbackObject === false) throw error;
@@ -2959,7 +2994,10 @@
                     rowIndex,
                     ...writeMutationOptions(options),
                 });
-                if (!apiWriteFailed(result)) return result;
+                if (!apiWriteFailed(result)) {
+                    rememberWriteTableName(tableName, candidateName);
+                    return result;
+                }
                 lastResult = result;
             }
             return lastResult;
