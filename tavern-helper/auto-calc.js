@@ -544,24 +544,57 @@
         return [];
     }
 
+    function rawTableHeaders(db, tableName) {
+        const sheet = getSheet(db, tableName);
+        if (sheet && Array.isArray(sheet.content) && Array.isArray(sheet.content[0])) return sheet.content[0].map(asText);
+        if (Array.isArray(sheet) && Array.isArray(sheet[0])) return sheet[0].map(asText);
+        if (sheet && Array.isArray(sheet.headers)) return sheet.headers.map(asText);
+        return [];
+    }
+
+    function writeFieldKeyForSheet(sheet, headers, key) {
+        const text = asText(key);
+        const headerSet = new Set(headers || []);
+        if (headerSet.has(text)) return text;
+        const comments = ddlColumnComments(sheetDdl(sheet));
+        for (const candidate of columnCandidates(text)) {
+            if (headerSet.has(candidate)) return candidate;
+            for (const [physicalName, comment] of comments) {
+                if (comment === candidate && headerSet.has(physicalName)) return physicalName;
+            }
+        }
+        return text;
+    }
+
+    function writeDataForTable(tableName, data = {}, { fillMissing = false } = {}) {
+        const currentDb = exportDatabase(null);
+        const sheet = getSheet(currentDb, tableName);
+        const headers = rawTableHeaders(currentDb, tableName);
+        if (!headers.length) return sanitizeWriteData(data);
+
+        const out = {};
+        if (fillMissing) {
+            const comments = ddlColumnComments(sheetDdl(sheet));
+            for (const header of headers) {
+                if (!header || header === 'row_id') continue;
+                const displayHeader = displayHeaderName(header, comments);
+                const value = data[header] ?? data[displayHeader];
+                out[header] = value == null ? '' : value;
+            }
+        }
+        for (const [key, value] of Object.entries(data || {})) {
+            const writeKey = writeFieldKeyForSheet(sheet, headers, key);
+            out[writeKey] = value == null ? '' : value;
+        }
+        return out;
+    }
+
     function sanitizeWriteData(data = {}) {
         return Object.fromEntries(Object.entries(data || {}).map(([key, value]) => [key, value == null ? '' : value]));
     }
 
     function completeInsertData(tableName, data = {}) {
-        const currentDb = exportDatabase(null);
-        const headers = tableHeaders(currentDb, tableName);
-        if (!headers.length) return sanitizeWriteData(data);
-
-        const out = {};
-        for (const header of headers) {
-            if (!header || header === 'row_id') continue;
-            out[header] = data[header] == null ? '' : data[header];
-        }
-        for (const [key, value] of Object.entries(data || {})) {
-            out[key] = value == null ? '' : value;
-        }
-        return out;
+        return writeDataForTable(tableName, data, { fillMissing: true });
     }
 
     function firstRow(db, tableName) {
@@ -2938,7 +2971,7 @@
 
     async function updateRowCompat(tableName, rowIndex, data, options = {}) {
         if (!api || typeof api.updateRow !== 'function') return false;
-        const safeData = sanitizeWriteData(data);
+        const safeData = writeDataForTable(tableName, data);
         let lastResult = false;
         for (const candidateName of writeTableNameCandidates(tableName)) {
             try {
