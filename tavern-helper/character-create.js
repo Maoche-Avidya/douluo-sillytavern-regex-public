@@ -77,6 +77,12 @@
     "template[data-raw-message]",
     "[data-raw-message-text]",
   ].join(",");
+  const EDITABLE_SOURCE_SELECTOR = [
+    "textarea",
+    "input[type='text']",
+    "input:not([type])",
+    "[contenteditable='true']",
+  ].join(",");
   const MAIN_TEXT_RE = /^(?![\s\S]*<[a-z][\w:-]*(?:\s+[^<>]*)?\s+data-dl(?:s|github)-root\b)[\s\S]*?((?:<content\b[^>]*>[\s\S]*?<\/content>\s*)+)[\s\S]*$/;
 
   const state = {
@@ -353,6 +359,24 @@
     return rawNode.textContent || "";
   }
 
+  function editableSourceTextFrom(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return "";
+    const controls = [];
+    if (node.matches && node.matches(EDITABLE_SOURCE_SELECTOR)) controls.push(node);
+    if (node.querySelectorAll) {
+      node.querySelectorAll(EDITABLE_SOURCE_SELECTOR).forEach((control) => controls.push(control));
+    }
+    for (const control of controls) {
+      if (control.closest && control.closest(ROOT_SELECTOR_ALL)) continue;
+      const value = control.matches && control.matches("[contenteditable='true']")
+        ? control.textContent
+        : control.value;
+      const preferred = preferModuleRaw(value, value);
+      if (detect(preferred)) return preferred;
+    }
+    return "";
+  }
+
   function markerOnly(value) {
     const text = String(value || "");
     if (MARK_TEXT && text.includes(MARK_TEXT)) return MARK_TEXT;
@@ -400,6 +424,10 @@
     for (const source of [content, node, fallbackNode]) {
       const rawNodeText = rawNodeTextFrom(source);
       if (rawNodeText) return rawNodeText;
+    }
+    for (const source of [content, node, fallbackNode]) {
+      const editableText = editableSourceTextFrom(source);
+      if (editableText) return editableText;
     }
     if (content) {
       return preferModuleRaw(contentText(content), cleanedInnerHtml(content));
