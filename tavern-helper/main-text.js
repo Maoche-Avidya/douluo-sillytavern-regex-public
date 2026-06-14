@@ -109,6 +109,12 @@
     mountAttempts: 0,
     scanRuns: 0,
     reportedNoMatch: false,
+    observers: [],
+    scannedDocuments: [],
+    observedDocuments: [],
+    accessibleHostDocumentCount: 0,
+    hostDomAccessError: "",
+    contextProbe: null,
   };
 
   const doneAttr = `dlou${toDatasetToken(MODULE_KIND)}Mounted`;
@@ -150,16 +156,29 @@
     return String(hash >>> 0);
   }
 
-  function ensureStyle() {
-    if (!CSS || document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
+  function ownerDocumentOf(node) {
+    return (node && node.ownerDocument) || document;
+  }
+
+  function ownerWindowOf(nodeOrDocument) {
+    const doc = nodeOrDocument && nodeOrDocument.nodeType === 9
+      ? nodeOrDocument
+      : ownerDocumentOf(nodeOrDocument);
+    return (doc && doc.defaultView) || window;
+  }
+
+  function ensureStyle(targetDocument = document) {
+    const doc = targetDocument || document;
+    if (!CSS || doc.getElementById(STYLE_ID)) return;
+    const style = doc.createElement("style");
     style.id = STYLE_ID;
     style.textContent = CSS;
-    (document.head || document.documentElement).appendChild(style);
+    (doc.head || doc.documentElement).appendChild(style);
   }
 
   function runInlineApp(root, code, label) {
-    const script = document.createElement("script");
+    const doc = ownerDocumentOf(root);
+    const script = doc.createElement("script");
     script.type = "text/javascript";
     script.textContent = code;
     root.appendChild(script);
@@ -167,15 +186,17 @@
     notify(`${label} rendered`);
   }
 
-  function nodesFromHtml(html) {
-    const template = document.createElement("template");
+  function nodesFromHtml(html, targetDocument = document) {
+    const doc = targetDocument || document;
+    const template = doc.createElement("template");
     template.innerHTML = String(html || "").trim();
     return Array.from(template.content.childNodes);
   }
 
-  function firstRootFromHtml(html, selector) {
-    const nodes = nodesFromHtml(html);
-    const wrapper = document.createElement("div");
+  function firstRootFromHtml(html, selector, targetDocument = document) {
+    const doc = targetDocument || document;
+    const nodes = nodesFromHtml(html, doc);
+    const wrapper = doc.createElement("div");
     nodes.forEach((node) => {
       if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "SCRIPT") return;
       wrapper.appendChild(node);
@@ -202,10 +223,12 @@
   }
 
   function mountCover(target, raw) {
-    ensureStyle();
-    window.__DLOU_COVER_DATABASE_TEMPLATE = COVER_DATABASE_TEMPLATE || "";
-    window.__DLOU_COVER_PLOT_PRESET = COVER_PLOT_PRESET || "";
-    const root = firstRootFromHtml(HTML, ROOT_SELECTOR);
+    const doc = ownerDocumentOf(target);
+    const host = ownerWindowOf(doc);
+    ensureStyle(doc);
+    host.__DLOU_COVER_DATABASE_TEMPLATE = COVER_DATABASE_TEMPLATE || "";
+    host.__DLOU_COVER_PLOT_PRESET = COVER_PLOT_PRESET || "";
+    const root = firstRootFromHtml(HTML, ROOT_SELECTOR, doc);
     if (!root) throw new Error("Cover root not found");
     if (!prepareMountHost(target, raw, "")) return true;
     root.dataset.dlouHelperRoot = MODULE_KIND;
@@ -219,8 +242,9 @@
   }
 
   function mountCharacterCreate(target, raw) {
-    ensureStyle();
-    const root = firstRootFromHtml(HTML, ROOT_SELECTOR);
+    const doc = ownerDocumentOf(target);
+    ensureStyle(doc);
+    const root = firstRootFromHtml(HTML, ROOT_SELECTOR, doc);
     if (!root) throw new Error("Character create root not found");
     if (!prepareMountHost(target, raw, "")) return true;
     root.dataset.dlouHelperRoot = MODULE_KIND;
@@ -233,26 +257,30 @@
     return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
 
-  function ensureHeadLinks(linksHtml) {
-    const tmp = document.createElement("template");
+  function ensureHeadLinks(linksHtml, targetDocument = document) {
+    const doc = targetDocument || document;
+    const tmp = doc.createElement("template");
     tmp.innerHTML = linksHtml;
     tmp.content.querySelectorAll("link").forEach((link) => {
       const href = link.getAttribute("href");
       const rel = link.getAttribute("rel") || "";
       if (!href) return;
       const selector = `link[href="${cssAttrValue(href)}"][rel="${cssAttrValue(rel)}"]`;
-      if (document.head.querySelector(selector)) return;
-      document.head.appendChild(link.cloneNode(true));
+      const head = doc.head || doc.documentElement;
+      if (head.querySelector && head.querySelector(selector)) return;
+      head.appendChild(link.cloneNode(true));
     });
   }
 
-  function installMainTextBootstrap() {
-    if (window.__DLOU_MAIN_TEXT_HELPER_BOOTSTRAPPED) return;
-    window.__DLOU_MAIN_TEXT_HELPER_BOOTSTRAPPED = true;
-    const themeScript = document.createElement("script");
+  function installMainTextBootstrap(targetDocument = document) {
+    const doc = targetDocument || document;
+    const host = ownerWindowOf(doc);
+    if (host.__DLOU_MAIN_TEXT_HELPER_BOOTSTRAPPED) return;
+    host.__DLOU_MAIN_TEXT_HELPER_BOOTSTRAPPED = true;
+    const themeScript = doc.createElement("script");
     themeScript.textContent =
       "(function(){try{var b=document.body;if(!b)return;var set=function(){b.dataset.douluoTheme=b.dataset.douluoTheme||'dark';};set();new MutationObserver(set).observe(b,{attributes:true,attributeFilter:['class','data-theme']});}catch(_){}})();";
-    (document.head || document.documentElement).appendChild(themeScript);
+    (doc.head || doc.documentElement).appendChild(themeScript);
     themeScript.remove();
   }
 
@@ -268,11 +296,12 @@
     const match = String(raw || "").match(MAIN_TEXT_RE);
     if (!match) return false;
     const capture = match[1] || "";
-    ensureStyle();
-    installMainTextBootstrap();
+    const doc = ownerDocumentOf(target);
+    ensureStyle(doc);
+    installMainTextBootstrap(doc);
     const parts = splitMainTextHtml(HTML);
-    ensureHeadLinks(parts.head);
-    const root = firstRootFromHtml(parts.body, ROOT_SELECTOR);
+    ensureHeadLinks(parts.head, doc);
+    const root = firstRootFromHtml(parts.body, ROOT_SELECTOR, doc);
     if (!root) throw new Error("Main text root not found");
     if (!prepareMountHost(target, raw, capture)) return true;
     root.dataset.dlouHelperRoot = MODULE_KIND;
@@ -450,14 +479,63 @@
     return "";
   }
 
+  function hostWindowEntries() {
+    const out = [];
+    const seen = [];
+    function add(label, getHost) {
+      try {
+        const host = getHost();
+        if (!host || seen.includes(host)) return;
+        seen.push(host);
+        out.push({ label, host });
+      } catch (_) {}
+    }
+    add("self", () => window);
+    add("parent", () => (window.parent && window.parent !== window ? window.parent : null));
+    add("top", () => (window.top && window.top !== window ? window.top : null));
+    return out;
+  }
+
   function hostWindows() {
-    const out = [window];
+    return hostWindowEntries().map((entry) => entry.host);
+  }
+
+  function documentLocation(targetDocument) {
     try {
-      if (window.parent && window.parent !== window) out.push(window.parent);
-    } catch (_) {}
-    try {
-      if (window.top && !out.includes(window.top)) out.push(window.top);
-    } catch (_) {}
+      const location = targetDocument && targetDocument.defaultView && targetDocument.defaultView.location;
+      return location && location.href ? String(location.href) : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function hostDocuments() {
+    const out = [];
+    const seen = [];
+    const errors = [];
+    hostWindowEntries().forEach((entry) => {
+      try {
+        const doc = entry.host.document;
+        if (!doc || !doc.documentElement || !doc.querySelectorAll) {
+          errors.push(`${entry.label}: unavailable`);
+          return;
+        }
+        if (seen.includes(doc)) return;
+        seen.push(doc);
+        out.push({
+          label: entry.label,
+          document: doc,
+          window: entry.host,
+          location: documentLocation(doc),
+        });
+      } catch (error) {
+        const text = error && error.message ? error.message : String(error || "unknown");
+        errors.push(`${entry.label}: ${text}`);
+      }
+    });
+    state.accessibleHostDocumentCount = out.length;
+    state.scannedDocuments = out.map((entry) => entry.label);
+    state.hostDomAccessError = errors.join("; ");
     return out;
   }
 
@@ -622,6 +700,30 @@
     return normalizeRawForModule(readRawFromDom(node, fallbackNode) || readRawFromContext(fallbackNode || node) || "");
   }
 
+  function probeContextForModule() {
+    const records = getContextRecords(-1);
+    const result = {
+      matched: false,
+      recordCount: records.length,
+      source: "",
+      rawPreview: "",
+    };
+    for (const record of records) {
+      const variants = messageTextVariants(record.message);
+      for (const value of variants) {
+        const preferred = normalizeRawForModule(preferModuleRaw(value, value));
+        if (!result.rawPreview && preferred) result.rawPreview = preview(preferred);
+        if (detect(preferred)) {
+          result.matched = true;
+          result.source = record.source || "";
+          result.rawPreview = preview(preferred);
+          return result;
+        }
+      }
+    }
+    return result;
+  }
+
   function preview(value) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, 180);
   }
@@ -780,14 +882,27 @@
     return "";
   }
 
-  function collectCandidates(root) {
-    const scope = root || document;
-    const nodes = new Set();
+  function collectCandidatesFromScope(scope, nodes) {
+    if (!scope) return;
     if (scope.matches && scope.matches(CONTENT_SELECTOR)) nodes.add(scope);
     if (scope.matches && scope.matches(MESSAGE_SELECTOR)) nodes.add(scope);
     if (scope.querySelectorAll) {
       scope.querySelectorAll(CONTENT_SELECTOR).forEach((node) => nodes.add(node));
       scope.querySelectorAll(MESSAGE_SELECTOR).forEach((node) => nodes.add(node));
+    }
+  }
+
+  function collectCandidates(root) {
+    const nodes = new Set();
+    if (root) {
+      state.scannedDocuments = ["custom-root"];
+      collectCandidatesFromScope(root, nodes);
+    } else {
+      const docs = hostDocuments();
+      docs.forEach((entry) => collectCandidatesFromScope(entry.document, nodes));
+      if (!docs.length && !state.hostDomAccessError) {
+        state.hostDomAccessError = "no accessible host document";
+      }
     }
     return Array.from(nodes).sort((a, b) => {
       const aMsg = findMessageNode(a) || a;
@@ -798,9 +913,14 @@
 
   function scanNew(options = {}) {
     const latestOnly = Boolean(options.latestOnly);
-    const candidates = collectCandidates(options.root || document);
+    const candidates = collectCandidates(options.root || null);
     state.candidateCount = candidates.length;
     state.scanRuns += 1;
+    if (!candidates.length) {
+      state.lastSkipReason = state.accessibleHostDocumentCount ? "no-dom-candidates" : "no-accessible-dom";
+      state.contextProbe = probeContextForModule();
+      if (state.contextProbe.rawPreview) state.lastRawPreview = state.contextProbe.rawPreview;
+    }
     const ordered = latestOnly ? candidates.reverse() : candidates;
     let rendered = 0;
     let matched = 0;
@@ -820,11 +940,19 @@
       lastRawPreview: state.lastRawPreview,
       lastSkipReason: state.lastSkipReason,
       lastMatched: state.lastMatched,
+      scannedDocuments: state.scannedDocuments.slice(),
+      accessibleHostDocumentCount: state.accessibleHostDocumentCount,
+      hostDomAccessError: state.hostDomAccessError,
+      contextProbe: state.contextProbe,
     };
     if (!rendered && !state.mounted && !state.reportedNoMatch && state.scanRuns >= 3) {
       state.reportedNoMatch = true;
+      const docs = result.scannedDocuments.length ? result.scannedDocuments.join(",") : "none";
+      const contextHint = result.contextProbe && result.contextProbe.matched
+        ? `, context=${result.contextProbe.source || "matched"}`
+        : "";
       notify(
-        `No ${MODULE_KIND} render after scan: candidates=${result.candidateCount}, reason=${result.lastSkipReason || "unknown"}, raw="${result.lastRawPreview}"`,
+        `No ${MODULE_KIND} render after scan: candidates=${result.candidateCount}, docs=${docs}, reason=${result.lastSkipReason || "unknown"}, raw="${result.lastRawPreview}"${contextHint}`,
         "warning"
       );
       try {
@@ -861,28 +989,44 @@
     nodes.forEach((node) => processCandidate(node));
   }
 
+  function isObservedDocument(targetDocument) {
+    return state.observers.some((entry) => entry.document === targetDocument);
+  }
+
   function startObserver() {
-    if (state.observed || !document.body) return;
-    state.observed = true;
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        enqueue(mutation.target);
-        mutation.addedNodes.forEach((node) => {
-          enqueue(node);
-          if (node && node.nodeType === Node.ELEMENT_NODE && node.querySelectorAll) {
-            node.querySelectorAll(CONTENT_SELECTOR).forEach((contentNode) => enqueue(contentNode));
-            node.querySelectorAll(MESSAGE_SELECTOR).forEach((messageNode) => enqueue(messageNode));
-          }
+    const docs = hostDocuments();
+    docs.forEach((entry) => {
+      const doc = entry.document;
+      if (!doc || isObservedDocument(doc)) return;
+      const target = doc.body || doc.documentElement;
+      if (!target) return;
+      const Observer = (entry.window && entry.window.MutationObserver) || window.MutationObserver;
+      if (typeof Observer !== "function") return;
+      const observer = new Observer((mutations) => {
+        mutations.forEach((mutation) => {
+          enqueue(mutation.target);
+          mutation.addedNodes.forEach((node) => {
+            enqueue(node);
+            if (node && node.nodeType === Node.ELEMENT_NODE && node.querySelectorAll) {
+              node.querySelectorAll(CONTENT_SELECTOR).forEach((contentNode) => enqueue(contentNode));
+              node.querySelectorAll(MESSAGE_SELECTOR).forEach((messageNode) => enqueue(messageNode));
+            }
+          });
         });
       });
+      observer.observe(target, { childList: true, subtree: true, characterData: true });
+      state.observers.push({ label: entry.label, document: doc, observer });
     });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    state.observer = observer;
+    state.observed = state.observers.length > 0;
+    state.observedDocuments = state.observers.map((entry) => entry.label);
   }
 
   function scheduleRecoveryScans() {
     [0, 80, 240, 750, 1600, 3200].forEach((delay) => {
-      window.setTimeout(() => scanNew({ includeExisting: true }), delay);
+      window.setTimeout(() => {
+        startObserver();
+        scanNew({ includeExisting: true });
+      }, delay);
     });
   }
 
@@ -902,10 +1046,16 @@
       documentReadyState: document.readyState,
       mounted: state.mounted,
       observed: state.observed,
+      observerCount: state.observers.length,
+      observedDocuments: state.observedDocuments.slice(),
       lastError: state.lastError,
       lastErrorStack: state.lastErrorStack,
       lastScanAt: state.lastScanAt,
       candidateCount: state.candidateCount,
+      scannedDocuments: state.scannedDocuments.slice(),
+      accessibleHostDocumentCount: state.accessibleHostDocumentCount,
+      hostDomAccessError: state.hostDomAccessError,
+      contextProbe: state.contextProbe,
       lastRawPreview: state.lastRawPreview,
       lastSkipReason: state.lastSkipReason,
       lastMatched: state.lastMatched,
