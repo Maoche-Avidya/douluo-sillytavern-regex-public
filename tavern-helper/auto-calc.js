@@ -345,7 +345,7 @@
     function stableHash(value) {
         const seen = new WeakSet();
         const text = JSON.stringify(value, (key, val) => {
-            if (key === '__raw' || key === '__rowIndex') return undefined;
+            if (key === '__raw' || key === '__rowIndex' || key === '__rowId') return undefined;
             if (key && /_脚本$/.test(key)) return undefined;
             if (key === '计算备注' || key === '加成计算备注' || key === '战力标尺定位_脚本') return undefined;
             if (val && typeof val === 'object') {
@@ -382,6 +382,28 @@
         return new RegExp(`\\bCREATE\\s+TABLE\\s+["\`\\[]?${escapeRegExp(tableName)}\\b`, 'i').test(String(ddl));
     }
 
+    function sheetDdl(sheet) {
+        return sheet?.sourceData?.ddl || sheet?.schema?.ddl || sheet?.ddl || '';
+    }
+
+    function ddlColumnComments(ddl) {
+        const comments = new Map();
+        String(ddl || '').split(/\r?\n/).forEach(line => {
+            const match = line.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\b.*?--\s*(.+?)\s*,?$/);
+            if (!match) return;
+            const [, column, comment] = match;
+            if (/^(CREATE|UNIQUE|CHECK|PRIMARY|FOREIGN)$/i.test(column)) return;
+            comments.set(column, comment.trim());
+        });
+        return comments;
+    }
+
+    function displayHeaderName(header, comments) {
+        const raw = asText(header);
+        if (raw === 'row_id') return raw;
+        return comments.get(raw) || raw;
+    }
+
     function sheetMatchesName(sheet, tableName) {
         if (!sheet || typeof sheet !== 'object') return false;
         return sheet.name === tableName
@@ -389,7 +411,7 @@
             || sheet.tableName === tableName
             || sheet.sqlTableName === tableName
             || sheet.physicalName === tableName
-            || ddlCreatesTable(sheet.sourceData?.ddl || sheet.schema?.ddl || sheet.ddl, tableName);
+            || ddlCreatesTable(sheetDdl(sheet), tableName);
     }
 
     function sheetHasExplicitName(sheet, tableName) {
@@ -442,6 +464,14 @@
         return candidates;
     }
 
+    function objectWriteTableNameCandidates(tableName) {
+        const preferred = preferredWriteTableNames.get(tableName);
+        if (preferred) return [preferred, ...tableNameCandidates(tableName).filter(name => name !== preferred)];
+        const physical = PHYSICAL_TABLE_NAMES[tableName];
+        if (physical && shouldPreferPhysicalTableName(tableName)) return [physical, tableName];
+        return [tableName];
+    }
+
     function rememberWriteTableName(originalName, usedName) {
         if (originalName && usedName && originalName !== usedName) {
             preferredWriteTableNames.set(originalName, usedName);
@@ -464,11 +494,21 @@
         return { ok: false, missing, message: databaseRepairHint(missing) };
     }
 
-    function rowToObject(headers, row, rowIndex) {
-        const out = { __rowIndex: rowIndex, __raw: row };
+    function rowToObject(headers, row, rowIndex, sheet = null) {
+        const out = { __rowIndex: row?.__rowIndex || rowIndex, __raw: row };
+        const comments = ddlColumnComments(sheetDdl(sheet));
         headers.forEach((header, index) => {
-            out[header] = Array.isArray(row) ? row[index] : row?.[header];
+            const rawHeader = asText(header);
+            const displayHeader = displayHeaderName(rawHeader, comments);
+            const value = Array.isArray(row) ? row[index] : row?.[rawHeader] ?? row?.[displayHeader];
+            out[rawHeader] = value;
+            if (displayHeader && displayHeader !== rawHeader) out[displayHeader] = value;
+            for (const [physicalName, comment] of comments) {
+                if (comment === rawHeader && out[physicalName] === undefined) out[physicalName] = value;
+            }
         });
+        const rowId = out.row_id ?? out['行号'] ?? (Array.isArray(row) ? row[0] : row?.row_id);
+        if (rowId !== undefined && rowId !== null && rowId !== '') out.__rowId = rowId;
         return out;
     }
 
@@ -480,15 +520,15 @@
                 const headers = sheet[0].map(asText);
                 return sheet.slice(1).map((row, idx) => rowToObject(headers, row, idx + 1));
             }
-            return sheet.map((row, idx) => ({ ...row, __rowIndex: idx + 1 }));
+            return sheet.map((row, idx) => rowToObject(Object.keys(row || {}), row, row?.__rowIndex || idx + 1));
         }
         if (Array.isArray(sheet.content)) {
             if (!sheet.content.length) return [];
             const headers = sheet.content[0].map(asText);
-            return sheet.content.slice(1).map((row, idx) => rowToObject(headers, row, idx + 1));
+            return sheet.content.slice(1).map((row, idx) => rowToObject(headers, row, idx + 1, sheet));
         }
-        if (Array.isArray(sheet.rows)) return sheet.rows.map((row, idx) => ({ ...row, __rowIndex: idx + 1 }));
-        if (Array.isArray(sheet.data)) return sheet.data.map((row, idx) => ({ ...row, __rowIndex: idx + 1 }));
+        if (Array.isArray(sheet.rows)) return sheet.rows.map((row, idx) => rowToObject(Object.keys(row || {}), row, row?.__rowIndex || idx + 1, sheet));
+        if (Array.isArray(sheet.data)) return sheet.data.map((row, idx) => rowToObject(Object.keys(row || {}), row, row?.__rowIndex || idx + 1, sheet));
         return [];
     }
 
@@ -498,7 +538,8 @@
 
     function tableHeaders(db, tableName) {
         const sheet = getSheet(db, tableName);
-        if (sheet && Array.isArray(sheet.content) && Array.isArray(sheet.content[0])) return sheet.content[0].map(asText);
+        const comments = ddlColumnComments(sheetDdl(sheet));
+        if (sheet && Array.isArray(sheet.content) && Array.isArray(sheet.content[0])) return sheet.content[0].map(header => displayHeaderName(header, comments));
         if (Array.isArray(sheet) && Array.isArray(sheet[0])) return sheet[0].map(asText);
         return [];
     }
@@ -2879,7 +2920,10 @@
         return result === false
             || result === null
             || result === -1
-            || (result && typeof result === 'object' && result.success === false);
+            || (result && typeof result === 'object' && result.ok === false)
+            || (result && typeof result === 'object' && result.success === false && result.ok !== true)
+            || (result && typeof result === 'object' && result.error)
+            || (result && typeof result === 'object' && Array.isArray(result.errors) && result.errors.length > 0);
     }
 
     function writeMutationOptions(options = {}) {
@@ -2911,7 +2955,7 @@
         }
         if (options.fallbackObject === false) return lastResult;
         try {
-            for (const candidateName of writeTableNameCandidates(tableName)) {
+            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
                 const result = await api.updateRow({
                     tableName: candidateName,
                     rowIndex,
@@ -2950,7 +2994,7 @@
         }
         if (options.fallbackObject === false) return lastResult;
         try {
-            for (const candidateName of writeTableNameCandidates(tableName)) {
+            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
                 const result = await api.insertRow({
                     tableName: candidateName,
                     data: safeData,
@@ -2988,7 +3032,7 @@
         }
         if (options.fallbackObject === false) return lastResult;
         try {
-            for (const candidateName of writeTableNameCandidates(tableName)) {
+            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
                 const result = await deleteFn.call(api, {
                     tableName: candidateName,
                     rowIndex,
@@ -3049,15 +3093,91 @@
         return { ok: true, message: `已写入${mapping.ops.length}项数据库更新。`, missing, mapping, recalculation };
     }
 
-    function diagnose(dbOverride = null) {
+    function databaseSheets(db) {
+        if (!db || typeof db !== 'object') return [];
+        const items = [];
+        Object.entries(db).forEach(([key, value]) => {
+            if (key !== 'tables' && value && typeof value === 'object') items.push({ key, sheet: value });
+        });
+        if (Array.isArray(db.tables)) {
+            db.tables.forEach((sheet, index) => {
+                if (sheet && typeof sheet === 'object') items.push({ key: sheet.uid || sheet.name || `tables[${index}]`, sheet });
+            });
+        }
+        return items;
+    }
+
+    function parseDdlColumnDefinitions(ddl) {
+        return String(ddl || '').split(/\r?\n/).map(line => {
+            const match = line.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\s+(.+?)(?:,)?(?:\s+--\s*(.*))?$/);
+            if (!match) return null;
+            const [, name, definition, comment] = match;
+            if (/^(CREATE|UNIQUE|CHECK|PRIMARY|FOREIGN)$/i.test(name)) return null;
+            return { name, definition: definition.trim(), comment: asText(comment) };
+        }).filter(Boolean);
+    }
+
+    function diagnoseDatabase(dbOverride = null) {
         const db = dbOverride || exportDatabase(null);
         const issues = [];
-        if (!db) return { ok: false, issues: ['无法读取数据库'] };
-        const missing = missingTables(db);
+        const missing = db ? missingTables(db) : [];
+        const legacyNotNullColumns = [];
+        const physicalFieldTables = [];
+        const rowIdIssues = [];
+        if (!db) return { ok: false, issues: ['无法读取数据库'], missingTables: [], legacyNotNullColumns, physicalFieldTables, rowIdIssues };
         if (missing.length) {
             issues.push(databaseRepairHint(missing));
             missing.forEach(tableName => issues.push(`缺少表：${tableName}`));
         }
+        for (const { key, sheet } of databaseSheets(db)) {
+            const label = sheet.name || sheet.tableName || sheet.uid || key;
+            const ddl = sheetDdl(sheet);
+            const comments = ddlColumnComments(ddl);
+            for (const column of parseDdlColumnDefinitions(ddl)) {
+                if (column.name === 'row_id') continue;
+                if (/\bTEXT\s+NOT\s+NULL\s+DEFAULT\b/i.test(column.definition) && !/\bUNIQUE\b/i.test(column.definition) && !/\bCHECK\b/i.test(column.definition)) {
+                    legacyNotNullColumns.push(`${label}.${column.comment || column.name}`);
+                }
+            }
+            const header = Array.isArray(sheet.content?.[0]) ? sheet.content[0].map(asText) : [];
+            if (header.some(name => /^field_\d+$/i.test(name)) && comments.size > 0) {
+                physicalFieldTables.push(label);
+            }
+            if (Array.isArray(sheet.content) && sheet.content.length > 1) {
+                const seen = new Set();
+                sheet.content.slice(1).forEach((row, index) => {
+                    const rowId = Array.isArray(row) ? row[0] : row?.row_id;
+                    const text = asText(rowId);
+                    if (!text) rowIdIssues.push(`${label}: 第 ${index + 1} 行 row_id 为空`);
+                    else if (seen.has(text)) rowIdIssues.push(`${label}: row_id ${text} 重复`);
+                    seen.add(text);
+                });
+            }
+        }
+        if (legacyNotNullColumns.length) {
+            issues.push(`检测到旧版 NOT NULL 普通字段：${legacyNotNullColumns.slice(0, 8).join('、')}。请重新注入/重建最新 28 表 TavernDB 模板。`);
+        }
+        if (physicalFieldTables.length) {
+            issues.push(`检测到物理字段表头，已启用 DDL 注释兼容：${[...new Set(physicalFieldTables)].slice(0, 8).join('、')}`);
+        }
+        if (rowIdIssues.length) {
+            issues.push(`检测到 row_id 异常：${rowIdIssues.slice(0, 8).join('；')}。SQLite 写入 affected 0 rows 时优先检查这里。`);
+        }
+        return {
+            ok: issues.length === 0,
+            issues,
+            missingTables: missing,
+            legacyNotNullColumns,
+            physicalFieldTables: [...new Set(physicalFieldTables)],
+            rowIdIssues,
+        };
+    }
+
+    function diagnose(dbOverride = null) {
+        const db = dbOverride || exportDatabase(null);
+        const databaseDiagnosis = diagnoseDatabase(db);
+        const issues = [...databaseDiagnosis.issues];
+        if (!db) return databaseDiagnosis;
         for (const row of rows(db, CONFIG.tables.traitRules)) {
             const formula = cell(row, '结算参数');
             if (asText(formula)) {
@@ -3074,7 +3194,7 @@
                 diagnostics.filter(text => text.includes('无法解析')).forEach(text => issues.push(text));
             }
         }
-        return { ok: issues.length === 0, issues };
+        return { ...databaseDiagnosis, ok: issues.length === 0, issues };
     }
 
     function weightedCombatValue(stats, ratios, mode = 'attack') {
@@ -4982,6 +5102,7 @@
         previewCreationMapping,
         applyCreationPayload,
         diagnose,
+        diagnoseDatabase,
         checkDatabaseReady: () => verifyDatabaseReady(exportDatabase(null)),
         checkCoreDatabaseReady: () => verifyDatabaseReady(exportDatabase(null), CORE_RECALC_TABLES),
         checkFullTemplateReady: () => verifyDatabaseReady(exportDatabase(null), REQUIRED_TEMPLATE_TABLES),
