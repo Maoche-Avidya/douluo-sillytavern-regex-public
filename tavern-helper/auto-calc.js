@@ -8,7 +8,7 @@
     'use strict';
 
     const SCRIPT_NAME = '斗罗自动计算脚本';
-    const VERSION = '0.6.5';
+    const VERSION = '0.6.6';
     const STORAGE_KEY = 'douluo_auto_calc_enabled';
     const LEGACY_STORAGE_KEYS = Object.freeze(['douluo_v03_auto_calc_enabled']);
     const EXTREME_ATTACK_MULTIPLIER = 1.5;
