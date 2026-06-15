@@ -661,6 +661,53 @@
         return rowsFromSheet(getSheet(db, tableName), tableName);
     }
 
+    function sheetExportShape(sheet) {
+        if (!sheet) return 'missing';
+        if (Array.isArray(sheet)) return Array.isArray(sheet[0]) ? 'array-content' : 'array-rows';
+        const shapes = [];
+        if (Array.isArray(sheet.content)) shapes.push('content');
+        if (Array.isArray(sheet.headers)) shapes.push('headers');
+        if (Array.isArray(sheet.rows)) shapes.push('rows');
+        if (Array.isArray(sheet.data)) shapes.push('data');
+        return shapes.length ? shapes.join('+') : 'unknown';
+    }
+
+    function isStandardContentSheet(sheet) {
+        return Boolean(sheet && !Array.isArray(sheet) && Array.isArray(sheet.content) && Array.isArray(sheet.content[0]));
+    }
+
+    function rowIdText(row) {
+        return asText(row?.__rowId ?? row?.row_id ?? row?.['行号']);
+    }
+
+    function singletonStructureIssues(db, tableName, options = {}) {
+        const sheet = getSheet(db, tableName);
+        const issues = [];
+        if (!sheet) return [`missing sheet ${tableName}`];
+        const shape = sheetExportShape(sheet);
+        if (options.requireStandardContent && !isStandardContentSheet(sheet)) {
+            issues.push(`non-standard export shape ${shape}`);
+        }
+        const dataRows = rowsFromSheet(sheet, tableName).filter(row => row && row.__rowIndex);
+        if (dataRows.length > 1) issues.push(`multiple singleton rows ${dataRows.length}`);
+        const seen = new Set();
+        dataRows.forEach((row, index) => {
+            const text = rowIdText(row);
+            if (!text) issues.push(`empty row_id at row ${index + 1}`);
+            else if (seen.has(text)) issues.push(`duplicate row_id ${text}`);
+            if (text) seen.add(text);
+        });
+        return issues;
+    }
+
+    function unsafeSingletonFailure(tableName, issues = []) {
+        return `${tableName}:unsafe singleton state:${issues.join('|') || 'unknown'}`;
+    }
+
+    function hasUnsafeSingletonFailure(failed = []) {
+        return failed.some(item => asText(item).includes(':unsafe singleton state:'));
+    }
+
     function tableHeaders(db, tableName) {
         const sheet = getSheet(db, tableName);
         const comments = ddlColumnComments(sheetDdl(sheet));
@@ -735,6 +782,10 @@
 
     function completeInsertData(tableName, data = {}) {
         return writeDataForTable(tableName, data, { fillMissing: true });
+    }
+
+    function omitRowIdFields(data = {}) {
+        return Object.fromEntries(Object.entries(data || {}).filter(([key]) => !['row_id', '行号', '行编号'].includes(key)));
     }
 
     function firstRow(db, tableName) {
@@ -1806,7 +1857,7 @@
         for (const update of updates) {
             if (!update || !update.table || !update.rowIndex || !update.data) continue;
             const result = await updateRowCompat(update.table, update.rowIndex, update.data, options);
-            if (apiWriteFailed(result)) failed.push(`${update.table}:updateRow failed`);
+            if (apiWriteFailed(result)) failed.push(`${update.table}:updateRow failed${writeFailureDetail(result)}`);
         }
         return failed;
     }
@@ -1859,13 +1910,13 @@
             const changed = Object.entries(merged).some(([field, value]) => asText(cell(keeper, field)) !== asText(value));
             if (changed) {
                 const result = await updateRowCompat(CONFIG.tables.backpack, keeper.__rowIndex, merged, options);
-                if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe update failed`);
+                if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe update failed${writeFailureDetail(result)}`);
             }
             duplicateRows.push(...group.slice(1));
         }
         for (const row of duplicateRows.sort((a, b) => b.__rowIndex - a.__rowIndex)) {
             const result = await deleteRowCompat(CONFIG.tables.backpack, row.__rowIndex, options);
-            if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe delete failed`);
+            if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe delete failed${writeFailureDetail(result)}`);
         }
         return failed;
     }
@@ -1876,44 +1927,27 @@
     }
 
     async function repairDuplicateSingletonRows(db, tableName, options = {}) {
-        const list = rows(db, tableName).filter(row => row && row.__rowIndex);
-        if (list.length <= 1) return { changed: false, failed: [] };
-
-        list.sort((a, b) => a.__rowIndex - b.__rowIndex);
-        const keeper = list[0];
-        const merged = {};
-        for (const row of list) {
-            for (const [key, value] of Object.entries(row)) {
-                if (key.startsWith('__') || key === 'row_id') continue;
-                if (singletonCellHasValue(value)) merged[key] = value;
-            }
-        }
-
-        const failed = [];
-        const needsMerge = Object.entries(merged).some(([key, value]) => asText(keeper[key]) !== asText(value));
-        if (needsMerge) {
-            const result = await updateRowCompat(tableName, keeper.__rowIndex, merged, options);
-            if (apiWriteFailed(result)) {
-                failed.push(`${tableName}:singleton merge failed`);
-                return { changed: false, failed };
-            }
-        }
-
-        for (const row of list.slice(1).sort((a, b) => b.__rowIndex - a.__rowIndex)) {
-            const result = await deleteRowCompat(tableName, row.__rowIndex, options);
-            if (apiWriteFailed(result)) failed.push(`${tableName}:singleton duplicate delete failed`);
-        }
-
-        return { changed: failed.length === 0, failed };
+        const issues = singletonStructureIssues(db, tableName, { requireStandardContent: true });
+        if (!issues.length) return { changed: false, failed: [] };
+        return { changed: false, failed: [unsafeSingletonFailure(tableName, issues)] };
     }
 
     async function repairMissingRuntimeSingletonRow(db, options = {}) {
         const failed = [];
+        const sheet = getSheet(db, CONFIG.tables.statsRuntime);
         if (dataRowCount(db, CONFIG.tables.statsRuntime) > 0) return { changed: false, failed };
+        const issues = [];
+        if (!isStandardContentSheet(sheet)) issues.push(`non-standard export shape ${sheetExportShape(sheet)}`);
+        else {
+            const headers = rawTableHeaders(db, CONFIG.tables.statsRuntime);
+            if (!headers.includes('row_id')) issues.push('missing row_id header');
+            if (sheet.content.length !== 1) issues.push(`unexpected content row count ${sheet.content.length}`);
+        }
+        if (issues.length) return { changed: false, failed: [unsafeSingletonFailure(CONFIG.tables.statsRuntime, issues)] };
         if (typeof api.insertRow !== 'function') return { changed: false, failed: [`${CONFIG.tables.statsRuntime}:singleton seed unavailable`] };
 
         const result = await upsertFirstRow(CONFIG.tables.statsRuntime, null, runtimeRowDefaults(), options);
-        if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.statsRuntime}:singleton seed failed`);
+        if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.statsRuntime}:singleton seed failed${writeFailureDetail(result)}`);
         return { changed: failed.length === 0, failed };
     }
 
@@ -1938,7 +1972,7 @@
         }
         if (typeof api.insertRow === 'function') {
             const insertData = tableName === CONFIG.tables.statsRuntime ? runtimeRowDefaults(data) : data;
-            return insertRowCompat(tableName, { row_id: 1, ...insertData }, options);
+            return insertRowCompat(tableName, insertData, options);
         }
         return false;
     }
@@ -3221,6 +3255,25 @@
         if (!api || typeof api.updateRow !== 'function') return false;
         const safeData = writeDataForTable(tableName, data);
         let lastResult = false;
+        if (options.fallbackObject !== false) {
+            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
+                try {
+                    const result = await api.updateRow({
+                        tableName: candidateName,
+                        rowIndex,
+                        data: safeData,
+                        ...writeMutationOptions(options),
+                    });
+                    if (!apiWriteFailed(result)) {
+                        rememberWriteTableName(tableName, candidateName);
+                        return result;
+                    }
+                    lastResult = result;
+                } catch (error) {
+                    console.warn(`[${SCRIPT_NAME}] updateRow object args failed for ${candidateName}`, error);
+                }
+            }
+        }
         for (const candidateName of writeTableNameCandidates(tableName)) {
             try {
                 const result = await api.updateRow(candidateName, rowIndex, safeData);
@@ -3234,32 +3287,31 @@
                 console.warn(`[${SCRIPT_NAME}] updateRow legacy args failed for ${candidateName}`, error);
             }
         }
-        if (options.fallbackObject === false) return lastResult;
-        try {
-            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
-                const result = await api.updateRow({
-                    tableName: candidateName,
-                    rowIndex,
-                    data: safeData,
-                    ...writeMutationOptions(options),
-                });
-                if (!apiWriteFailed(result)) {
-                    rememberWriteTableName(tableName, candidateName);
-                    return result;
-                }
-                lastResult = result;
-            }
-            return lastResult;
-        } catch (error) {
-            console.warn(`[${SCRIPT_NAME}] updateRow object args failed`, error);
-            return false;
-        }
+        return lastResult;
     }
 
     async function insertRowCompat(tableName, data, options = {}) {
         if (!api || typeof api.insertRow !== 'function') return false;
-        const safeData = completeInsertData(tableName, data);
+        const safeData = omitRowIdFields(completeInsertData(tableName, data));
         let lastResult = false;
+        if (options.fallbackObject !== false) {
+            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
+                try {
+                    const result = await api.insertRow({
+                        tableName: candidateName,
+                        data: safeData,
+                        ...writeMutationOptions(options),
+                    });
+                    if (!apiWriteFailed(result)) {
+                        rememberWriteTableName(tableName, candidateName);
+                        return result;
+                    }
+                    lastResult = result;
+                } catch (error) {
+                    console.warn(`[${SCRIPT_NAME}] insertRow object args failed for ${candidateName}`, error);
+                }
+            }
+        }
         for (const candidateName of writeTableNameCandidates(tableName)) {
             try {
                 const result = await api.insertRow(candidateName, safeData);
@@ -3273,31 +3325,31 @@
                 console.warn(`[${SCRIPT_NAME}] insertRow legacy args failed for ${candidateName}`, error);
             }
         }
-        if (options.fallbackObject === false) return lastResult;
-        try {
-            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
-                const result = await api.insertRow({
-                    tableName: candidateName,
-                    data: safeData,
-                    ...writeMutationOptions(options),
-                });
-                if (!apiWriteFailed(result)) {
-                    rememberWriteTableName(tableName, candidateName);
-                    return result;
-                }
-                lastResult = result;
-            }
-            return lastResult;
-        } catch (error) {
-            console.warn(`[${SCRIPT_NAME}] insertRow object args failed`, error);
-            return false;
-        }
+        return lastResult;
     }
 
     async function deleteRowCompat(tableName, rowIndex, options = {}) {
         const deleteFn = api && (api.deleteRow || api.removeRow);
         if (!deleteFn) return false;
         let lastResult = false;
+        if (options.fallbackObject !== false) {
+            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
+                try {
+                    const result = await deleteFn.call(api, {
+                        tableName: candidateName,
+                        rowIndex,
+                        ...writeMutationOptions(options),
+                    });
+                    if (!apiWriteFailed(result)) {
+                        rememberWriteTableName(tableName, candidateName);
+                        return result;
+                    }
+                    lastResult = result;
+                } catch (error) {
+                    console.warn(`[${SCRIPT_NAME}] deleteRow object args failed for ${candidateName}`, error);
+                }
+            }
+        }
         for (const candidateName of writeTableNameCandidates(tableName)) {
             try {
                 const result = await deleteFn.call(api, candidateName, rowIndex);
@@ -3311,25 +3363,7 @@
                 console.warn(`[${SCRIPT_NAME}] deleteRow legacy args failed for ${candidateName}`, error);
             }
         }
-        if (options.fallbackObject === false) return lastResult;
-        try {
-            for (const candidateName of objectWriteTableNameCandidates(tableName)) {
-                const result = await deleteFn.call(api, {
-                    tableName: candidateName,
-                    rowIndex,
-                    ...writeMutationOptions(options),
-                });
-                if (!apiWriteFailed(result)) {
-                    rememberWriteTableName(tableName, candidateName);
-                    return result;
-                }
-                lastResult = result;
-            }
-            return lastResult;
-        } catch (error) {
-            console.warn(`[${SCRIPT_NAME}] deleteRow object args failed`, error);
-            return false;
-        }
+        return lastResult;
     }
 
     async function applyCreationPayload(payload, options = {}) {
@@ -3417,7 +3451,9 @@
         const affectedZeroRisks = [];
         const upsertKeyIssues = [];
         const exportShapeIssues = [];
-        if (!db) return { ok: false, issues: ['无法读取数据库'], missingTables: [], legacyNotNullColumns, physicalFieldTables, physicalFieldsWithoutDdl, physicalColumnIssues, rowIdIssues, affectedZeroRisks, upsertKeyIssues, exportShapeIssues };
+        const singletonIssues = [];
+        const singletonRowIdNotes = [];
+        if (!db) return { ok: false, issues: ['无法读取数据库'], missingTables: [], legacyNotNullColumns, physicalFieldTables, physicalFieldsWithoutDdl, physicalColumnIssues, rowIdIssues, affectedZeroRisks, upsertKeyIssues, exportShapeIssues, singletonIssues, singletonRowIdNotes };
         if (missing.length) {
             issues.push(databaseRepairHint(missing));
             missing.forEach(tableName => issues.push(`缺少表：${tableName}`));
@@ -3430,6 +3466,10 @@
             const templateFields = templateFieldsForTable(logicalLabel).length ? templateFieldsForTable(logicalLabel) : templateFieldsForTable(key);
             const rawHeaders = rawTableHeaders({ [key]: sheet }, logicalLabel).length ? rawTableHeaders({ [key]: sheet }, logicalLabel) : rawTableHeaders({ [key]: sheet }, key);
             const dataRows = rowsFromSheet(sheet, logicalLabel);
+            if (SINGLETON_TABLES.includes(logicalLabel) && !isStandardContentSheet(sheet)) {
+                const issue = `${label}: non-standard export shape ${sheetExportShape(sheet)}`;
+                if (!singletonIssues.includes(issue)) singletonIssues.push(issue);
+            }
             if (!Array.isArray(sheet.content) && (Array.isArray(sheet.headers) || Array.isArray(sheet.rows) || Array.isArray(sheet.data))) {
                 const shapes = [
                     Array.isArray(sheet.headers) ? 'headers' : '',
@@ -3437,6 +3477,10 @@
                     Array.isArray(sheet.data) ? 'data' : '',
                 ].filter(Boolean).join('+');
                 exportShapeIssues.push(`${label}: ${shapes || 'non-content'} export`);
+                if (SINGLETON_TABLES.includes(logicalLabel)) {
+                    const issue = `${label}: non-standard export shape ${shapes || 'non-content'}`;
+                    if (!singletonIssues.includes(issue)) singletonIssues.push(issue);
+                }
             }
             for (const column of parseDdlColumnDefinitions(ddl)) {
                 if (column.name === 'row_id') continue;
@@ -3458,14 +3502,22 @@
                 dataRows.forEach((row, index) => {
                     const rowId = row.__rowId ?? row.row_id ?? row['行号'];
                     const text = asText(rowId);
-                    if (!text) rowIdIssues.push(`${label}: 第 ${index + 1} 行 row_id 为空`);
-                    else if (seen.has(text)) rowIdIssues.push(`${label}: row_id ${text} 重复`);
+                    if (!text) {
+                        rowIdIssues.push(`${label}: 第 ${index + 1} 行 row_id 为空`);
+                        if (SINGLETON_TABLES.includes(logicalLabel)) singletonIssues.push(`${label}: empty row_id at row ${index + 1}`);
+                    } else if (seen.has(text)) {
+                        rowIdIssues.push(`${label}: row_id ${text} 重复`);
+                        if (SINGLETON_TABLES.includes(logicalLabel)) singletonIssues.push(`${label}: duplicate row_id ${text}`);
+                    }
                     seen.add(text);
                 });
                 if (SINGLETON_TABLES.includes(logicalLabel)) {
-                    if (dataRows.length > 1) rowIdIssues.push(`${label}: 单例表存在 ${dataRows.length} 行`);
+                    if (dataRows.length > 1) {
+                        rowIdIssues.push(`${label}: 单例表存在 ${dataRows.length} 行`);
+                        singletonIssues.push(`${label}: multiple singleton rows ${dataRows.length}`);
+                    }
                     const firstRowId = asText(dataRows[0]?.__rowId ?? dataRows[0]?.row_id ?? dataRows[0]?.['行号']);
-                    if (firstRowId && firstRowId !== '1') affectedZeroRisks.push(`${label}: singleton row_id is ${firstRowId}`);
+                    if (firstRowId && firstRowId !== '1') singletonRowIdNotes.push(`${label}: singleton row_id is ${firstRowId}`);
                 }
                 const keyFields = configuredKeyFieldsForTable(logicalLabel);
                 if (keyFields.length) {
@@ -3503,6 +3555,9 @@
         if (rowIdIssues.length) {
             issues.push(`检测到 row_id 异常：${rowIdIssues.slice(0, 8).join('；')}。SQLite 写入 affected 0 rows 时优先检查这里。`);
         }
+        if (singletonIssues.length) {
+            issues.push(`检测到核心单例表结构异常：${singletonIssues.slice(0, 8).join('；')}。自动计算已停止危险修复，请清洗/重建后再重算。`);
+        }
         if (upsertKeyIssues.length) {
             issues.push(`检测到 upsert 唯一键异常：${upsertKeyIssues.slice(0, 8).join('；')}。affected 0 rows 后不会对缺失唯一键的表自动 insert。`);
         }
@@ -3521,6 +3576,8 @@
             affectedZeroRisks,
             upsertKeyIssues,
             exportShapeIssues,
+            singletonIssues,
+            singletonRowIdNotes,
         };
     }
 
@@ -5044,7 +5101,7 @@
         const runtimeRow = playerCombatStats(db).runtimeRow;
         if (preview.writeback?.runtime && Object.keys(preview.writeback.runtime).length) {
             const result = await upsertFirstRow(runtimeStatsTableName(db), runtimeRow, preview.writeback.runtime, options);
-            if (apiWriteFailed(result)) failedWrites.push(`${runtimeStatsTableName(db)}:update failed`);
+            if (apiWriteFailed(result)) failedWrites.push(`${runtimeStatsTableName(db)}:update failed${writeFailureDetail(result)}`);
         }
 
         const combatData = {
@@ -5055,10 +5112,10 @@
             const combatResult = combatRow?.__rowIndex
                 ? await deleteRowCompat(CONFIG.tables.combatState, combatRow.__rowIndex, options)
                 : false;
-            if (apiWriteFailed(combatResult)) failedWrites.push(`${CONFIG.tables.combatState}:delete failed`);
+            if (apiWriteFailed(combatResult)) failedWrites.push(`${CONFIG.tables.combatState}:delete failed${writeFailureDetail(combatResult)}`);
         } else {
             const combatResult = await upsertFirstRow(CONFIG.tables.combatState, combatRow, combatData, options);
-            if (apiWriteFailed(combatResult)) failedWrites.push(`${CONFIG.tables.combatState}:update failed`);
+            if (apiWriteFailed(combatResult)) failedWrites.push(`${CONFIG.tables.combatState}:update failed${writeFailureDetail(combatResult)}`);
         }
 
         let postRecalculate = null;
@@ -5125,6 +5182,12 @@
         isWriting = true;
         try {
             const singletonRepair = await repairSingletonTables(db, { quiet: true });
+            if (hasUnsafeSingletonFailure(singletonRepair.failed)) {
+                const message = `unsafe singleton state: ${singletonRepair.failed.slice(0, 3).join('; ')}`;
+                console.warn(`[${SCRIPT_NAME}] ${message}`);
+                recalcToast(options, message, 'warning', 'severe');
+                return { ok: false, reason: 'unsafe singleton state', failedWrites: singletonRepair.failed };
+            }
             if (singletonRepair.changed) db = exportDatabase(db) || db;
 
             const statsRow = firstRow(db, CONFIG.tables.stats);
@@ -5297,14 +5360,14 @@
             failedWrites.push(...await repairDuplicateBackpackRows(db, { quiet: true }));
             failedWrites.push(...await updateRows(updates, { quiet: true }));
             const statsResult = await upsertFirstRow(CONFIG.tables.stats, statsRow, statsUpdate, { quiet: true });
-            if (apiWriteFailed(statsResult)) failedWrites.push(`${CONFIG.tables.stats}:upsert failed`);
+            if (apiWriteFailed(statsResult)) failedWrites.push(`${CONFIG.tables.stats}:upsert failed${writeFailureDetail(statsResult)}`);
             const runtimeResult = await upsertFirstRow(runtimeTable, runtimeRow, runtimeUpdate, { quiet: true });
-            if (apiWriteFailed(runtimeResult)) failedWrites.push(`${runtimeTable}:upsert failed`);
+            if (apiWriteFailed(runtimeResult)) failedWrites.push(`${runtimeTable}:upsert failed${writeFailureDetail(runtimeResult)}`);
             if (playerRow && playerRow.__rowIndex) {
                 const playerResult = await updateRowCompat(CONFIG.tables.player, playerRow.__rowIndex, {
                     '战力标尺定位_脚本': scale,
                 }, { quiet: true });
-                if (apiWriteFailed(playerResult)) failedWrites.push(`${CONFIG.tables.player}:updateRow failed`);
+                if (apiWriteFailed(playerResult)) failedWrites.push(`${CONFIG.tables.player}:updateRow failed${writeFailureDetail(playerResult)}`);
             }
 
             if (CONFIG.refreshAfterWrite && typeof api.refreshDataAndWorldbook === 'function') {
