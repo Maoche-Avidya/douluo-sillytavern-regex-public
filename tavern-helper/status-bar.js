@@ -36,6 +36,27 @@
     "main",
   ];
   const MEDIA_CONTENT_SELECTOR = "img,video,canvas,svg,picture,iframe,object,embed";
+  const USER_MESSAGE_SELECTOR = [
+    "[is_user='true']",
+    "[data-is-user='true']",
+    "[data-user='true']",
+    "[data-message-role='user']",
+    "[data-role='user']",
+    ".is_user",
+    ".is-user",
+    ".mes_user",
+    ".mes-user",
+    ".message-user",
+    ".user-message",
+  ].join(",");
+  const EDITING_MESSAGE_SELECTOR = [
+    ".mes_editing",
+    ".mes-editing",
+    ".is-editing",
+    "[data-editing='true']",
+    "[data-message-editing='true']",
+  ].join(",");
+  const EDITABLE_SELECTOR = "textarea,input[type='text'],input:not([type]),[contenteditable='true']";
   const EXCLUSIVE_MODULE_ROOT_SELECTOR = [
     "[data-cover-root]",
     ".ds8[data-root]",
@@ -264,6 +285,63 @@
     return candidates.length ? candidates[candidates.length - 1] : null;
   }
 
+  function visibleMessages(container) {
+    if (!container || !container.querySelectorAll) return [];
+    const selector = MESSAGE_SELECTORS.join(",");
+    return Array.from(container.querySelectorAll(selector)).filter(isVisibleTarget);
+  }
+
+  function attrLooksTruthy(node, name) {
+    const value = node && node.getAttribute && node.getAttribute(name);
+    return /^(?:1|true|yes|user)$/i.test(String(value || "").trim());
+  }
+
+  function messageLooksUserAuthored(message) {
+    if (!message || message.nodeType !== 1) return false;
+    try {
+      if (message.matches && message.matches(USER_MESSAGE_SELECTOR)) return true;
+    } catch (_) {}
+    return [
+      "is_user",
+      "data-is-user",
+      "data-user",
+      "data-message-role",
+      "data-role",
+    ].some((attr) => attrLooksTruthy(message, attr));
+  }
+
+  function hasEditableOutsideHost(node) {
+    if (!node || !node.querySelectorAll) return false;
+    try {
+      return Array.from(node.querySelectorAll(EDITABLE_SELECTOR)).some((control) => !isInsideHost(control));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function messageIsBeingEdited(message) {
+    if (!message || message.nodeType !== 1) return false;
+    try {
+      if (message.matches && message.matches(EDITING_MESSAGE_SELECTOR)) return true;
+    } catch (_) {}
+    return hasEditableOutsideHost(message);
+  }
+
+  function safeMessageSkipReason(message) {
+    if (!message) return "no-message";
+    if (messageLooksUserAuthored(message)) return "user-message";
+    if (messageIsBeingEdited(message)) return "editing-message";
+    return "";
+  }
+
+  function lastSafeMessage(container) {
+    const messages = visibleMessages(container);
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (!safeMessageSkipReason(messages[index])) return messages[index];
+    }
+    return null;
+  }
+
   function placementAfterMessage(container, message) {
     if (!container || !message) return null;
     let cursor = message;
@@ -367,12 +445,12 @@
     const container = findChatContainer();
     if (container) {
       const lastMessage = lastVisibleMessage(container);
-      if (messageLooksLikeExclusiveModule(lastMessage)) {
-        return { target: container, before: placementAfterMessage(container, lastMessage), mode: "after-module-message" };
-      }
-      const blockPlacement = placementInMessageBlock(lastMessage);
-      if (blockPlacement) return blockPlacement;
-      return { target: container, before: placementAfterMessage(container, lastMessage), mode: lastMessage ? "after-last-message" : "chat-tail" };
+      return {
+        target: container,
+        before: null,
+        mode: "chat-tail",
+        reason: lastMessage ? (safeMessageSkipReason(lastMessage) || "stable-chat-tail") : "stable-chat-tail",
+      };
     }
     for (const selector of FALLBACK_TARGET_SELECTORS) {
       const candidates = Array.from(document.querySelectorAll(selector)).filter(isVisibleTarget);
@@ -395,6 +473,7 @@
     }
     host.dataset.mountTarget = describeTarget(target);
     host.dataset.mountMode = placement.mode || "";
+    host.dataset.mountReason = placement.reason || "";
     return target;
   }
 

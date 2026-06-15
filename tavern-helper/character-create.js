@@ -96,6 +96,26 @@
     "input:not([type])",
     "[contenteditable='true']",
   ].join(",");
+  const USER_MESSAGE_SELECTOR = [
+    "[is_user='true']",
+    "[data-is-user='true']",
+    "[data-user='true']",
+    "[data-message-role='user']",
+    "[data-role='user']",
+    ".is_user",
+    ".is-user",
+    ".mes_user",
+    ".mes-user",
+    ".message-user",
+    ".user-message",
+  ].join(",");
+  const EDITING_MESSAGE_SELECTOR = [
+    ".mes_editing",
+    ".mes-editing",
+    ".is-editing",
+    "[data-editing='true']",
+    "[data-message-editing='true']",
+  ].join(",");
   const MAIN_TEXT_RE = /^(?![\s\S]*<[a-z][\w:-]*(?:\s+[^<>]*)?\s+data-dl(?:s|github)-root\b)[\s\S]*?((?:<content\b[^>]*>[\s\S]*?<\/content>\s*)+)[\s\S]*$/;
   const MAIN_TEXT_EXISTING_UI_RE = /<[a-z][\w:-]*(?:\s+[^<>]*)?\s+data-dl(?:s|github)-root\b/i;
   const MAIN_TEXT_PLOT_PROGRESS_INPUT_RE = /<\s*player_input\b[^>]*>[\s\S]*?<\s*\/\s*player_input\s*>/i;
@@ -315,7 +335,13 @@
 
   function mainTextCaptureFromRaw(raw) {
     const text = String(raw || "");
-    if (!text.trim() || MAIN_TEXT_EXISTING_UI_RE.test(text) || rawLooksLikePlotProgressAudit(text) || rawLooksLikeFixedPageControlMarker(text)) return "";
+    if (
+      !text.trim() ||
+      MAIN_TEXT_EXISTING_UI_RE.test(text) ||
+      rawLooksLikeMainTextHelperUiText(text) ||
+      rawLooksLikePlotProgressAudit(text) ||
+      rawLooksLikeFixedPageControlMarker(text)
+    ) return "";
     const explicit = text.match(MAIN_TEXT_RE);
     if (explicit) return explicit[1] || "";
     const braced = text.match(MAIN_TEXT_BRACED_STRUCTURE_RE);
@@ -323,6 +349,12 @@
     const body = braced ? braced[1] : bare && bare[1];
     const clean = String(body || "").trim();
     return clean ? "<content>\n" + clean + "\n</content>" : "";
+  }
+
+  function rawLooksLikeMainTextHelperUiText(raw) {
+    const text = String(raw || "");
+    if (!/(?:正文主题|正文字体|正文字号|对白字号|玩家头像|自定义角色|保存角色)/.test(text)) return false;
+    return /(?:Soul Land Chronicle|斗罗纪行|正文与对白|上传玩家头像|使用角色创建头像)/.test(text);
   }
 
   function rawLooksLikePlotProgressAudit(raw) {
@@ -739,6 +771,76 @@
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return null;
     if (node.matches && node.matches(MESSAGE_SELECTOR)) return node;
     return node.closest ? node.closest(MESSAGE_SELECTOR) : null;
+  }
+
+  function attrLooksTruthy(node, name) {
+    const value = node && node.getAttribute && node.getAttribute(name);
+    return /^(?:1|true|yes|user)$/i.test(String(value || "").trim());
+  }
+
+  function messageNodeLooksUserAuthored(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    try {
+      if (node.matches && node.matches(USER_MESSAGE_SELECTOR)) return true;
+    } catch (_) {}
+    return [
+      "is_user",
+      "data-is-user",
+      "data-user",
+      "data-message-role",
+      "data-role",
+    ].some((attr) => attrLooksTruthy(node, attr));
+  }
+
+  function recordMessageLooksUserAuthored(message) {
+    if (!message || typeof message !== "object") return false;
+    if (message.is_user === true || message.isUser === true || message.user === true) return true;
+    if (message.is_user === 1 || message.isUser === 1 || message.user === 1) return true;
+    const roleValues = [
+      message.role,
+      message.type,
+      message.sender,
+      message.source,
+      message.authorRole,
+      message.author_role,
+      message.extra && message.extra.role,
+      message.extra && message.extra.type,
+    ];
+    return roleValues.some((value) => /^(?:user|human|persona|player)$/i.test(String(value || "").trim()));
+  }
+
+  function contextRecordLooksUserAuthored(record) {
+    return !!(record && recordMessageLooksUserAuthored(record.message));
+  }
+
+  function messageContextLooksUserAuthored(messageNode) {
+    const id = messageIndexFromNode(messageNode);
+    if (id < 0) return false;
+    return getContextRecordsForMessageId(id).some(contextRecordLooksUserAuthored);
+  }
+
+  function messageLooksUserAuthored(messageNode) {
+    if (MODULE_KIND !== "main-text") return false;
+    return messageNodeLooksUserAuthored(messageNode) || messageContextLooksUserAuthored(messageNode);
+  }
+
+  function hasEditableOutsideHelper(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.querySelectorAll) return false;
+    try {
+      return Array.from(node.querySelectorAll(EDITABLE_SOURCE_SELECTOR)).some((control) => {
+        return !(control.closest && control.closest(ROOT_SELECTOR_ALL));
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function messageIsBeingEdited(messageNode, target) {
+    if (MODULE_KIND !== "main-text") return false;
+    try {
+      if (messageNode && messageNode.matches && messageNode.matches(EDITING_MESSAGE_SELECTOR)) return true;
+    } catch (_) {}
+    return hasEditableOutsideHelper(target) || hasEditableOutsideHelper(messageNode);
   }
 
   function findContentContainer(node) {
@@ -1220,6 +1322,7 @@
     let firstStrongPageCount = 0;
 
     for (const record of records) {
+      if (contextRecordLooksUserAuthored(record)) continue;
       const activeSwipe = activeSwipeIndex(record.message);
       const pageCount = swipePageCount(record.message);
       const strong = activeSwipe >= 0;
@@ -1357,6 +1460,7 @@
       rawPreview: "",
     };
     for (const record of records) {
+      if (MODULE_KIND === "main-text" && contextRecordLooksUserAuthored(record)) continue;
       const pageCount = swipePageCount(record.message);
       const markerSwipe = hasFixedPageRoute() ? fixedPageMarkerSwipeIndex(record.message) : -1;
       const activeSwipe = hasFixedPageRoute()
@@ -1714,6 +1818,16 @@
     }
     const mountedRoot = findMountedUiRoot(target);
     const mountedModule = mountedRoot && (mountedRoot.getAttribute("data-dlou-helper-root") || inferMountedModule(mountedRoot));
+    if (messageLooksUserAuthored(messageNode)) {
+      state.lastSkipReason = "main-text-user-message";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
+      return false;
+    }
+    if (mountedModule === MODULE_KIND && messageIsBeingEdited(messageNode, target)) {
+      state.lastSkipReason = "mounted-editing-preserved";
+      rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
+      return false;
+    }
     const rawInfo = readRawInfo(target, messageNode);
     const raw = rawInfo.raw;
     const previousRawState = {
