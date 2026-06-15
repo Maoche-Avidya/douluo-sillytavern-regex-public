@@ -586,7 +586,7 @@
     if (index < 0) return -1;
     const records = getContextRecordsForMessageId(index);
     for (const record of records) {
-      const swipe = activeSwipeIndex(record.message);
+      const swipe = routeSwipeIndexForRecord(record, swipePageCount(record.message));
       if (swipe >= 0) return swipe;
     }
     return -1;
@@ -1214,6 +1214,8 @@
       const index = normalizeSwipeIndex(message[key], length);
       if (index >= 0) return index;
     }
+    const inferred = inferSwipeIndexFromMessageBody(message, length);
+    if (inferred >= 0) return inferred;
     return -1;
   }
 
@@ -1222,6 +1224,45 @@
     const raw = Math.trunc(Number(value));
     if (raw >= 0 && raw < length) return raw;
     if (raw > 0 && raw - 1 < length) return raw - 1;
+    return -1;
+  }
+
+  function defaultFixedSwipeIndex(messageId, pageCount) {
+    return hasFixedPageRoute() &&
+      normalizeMessageId(messageId) === FIXED_UI_MESSAGE_ID &&
+      Number(pageCount || 0) >= FIXED_UI_MIN_PAGE_COUNT
+      ? 0
+      : -1;
+  }
+
+  function routeSwipeIndexForRecord(record, pageCount) {
+    const active = activeSwipeIndex(record && record.message);
+    if (active >= 0) return active;
+    return defaultFixedSwipeIndex(record && record.messageId, pageCount);
+  }
+
+  function messageFieldStrings(value) {
+    if (!value) return [];
+    if (typeof value === "string") return [value];
+    if (typeof value !== "object") return [];
+    const out = [];
+    ["mes", "message", "content", "text", "raw"].forEach((key) => {
+      if (typeof value[key] === "string") out.push(value[key]);
+    });
+    return out;
+  }
+
+  function comparableSwipeText(value) {
+    return String(value || "").replace(/\r\n/g, "\n").trim();
+  }
+
+  function inferSwipeIndexFromMessageBody(message, length) {
+    const currentTexts = messageFieldStrings(message).map(comparableSwipeText).filter(Boolean);
+    if (!currentTexts.length) return -1;
+    for (let i = 0; i < length; i += 1) {
+      const swipeTexts = messageFieldStrings(message.swipes[i]).map(comparableSwipeText).filter(Boolean);
+      if (swipeTexts.some((text) => currentTexts.includes(text))) return i;
+    }
     return -1;
   }
 
@@ -1237,8 +1278,8 @@
   function readFixedPageFromContextInfo(node, records, index) {
     let firstRouteInfo = null;
     for (const record of records) {
-      const activeSwipe = activeSwipeIndex(record.message);
       const pageCount = swipePageCount(record.message);
+      const activeSwipe = routeSwipeIndexForRecord(record, pageCount);
       const routeInfo = {
         source: record.source || "context",
         strong: activeSwipe >= 0,
@@ -1397,8 +1438,10 @@
       rawPreview: "",
     };
     for (const record of records) {
-      const activeSwipe = activeSwipeIndex(record.message);
       const pageCount = swipePageCount(record.message);
+      const activeSwipe = hasFixedPageRoute()
+        ? routeSwipeIndexForRecord(record, pageCount)
+        : activeSwipeIndex(record.message);
       const routeInfo = {
         source: record.source || "",
         messageId: record.messageId,
