@@ -118,8 +118,9 @@
   ].join(",");
   const MAIN_TEXT_RE = /^(?![\s\S]*<[a-z][\w:-]*(?:\s+[^<>]*)?\s+data-dl(?:s|github)-root\b)[\s\S]*?((?:<content\b[^>]*>[\s\S]*?<\/content>\s*)+)[\s\S]*$/;
   const MAIN_TEXT_EXISTING_UI_RE = /<[a-z][\w:-]*(?:\s+[^<>]*)?\s+data-dl(?:s|github)-root\b/i;
-  const MAIN_TEXT_PLOT_PROGRESS_INPUT_RE = /<\s*player_input\b[^>]*>[\s\S]*?<\s*\/\s*player_input\s*>/i;
+  const MAIN_TEXT_PLOT_PROGRESS_INPUT_RE = /<\s*(player_input|input)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i;
   const MAIN_TEXT_PLOT_PROGRESS_AUDIT_RE = /<\s*(?:chapter_state|anchor_update|recall_detail|recall|time_state|scene_state|runtime_state|time_recall|rationality_verdict|butterfly_delta|writing_directive|format_directive|db_delta)\b[^>]*>/i;
+  const MAIN_TEXT_PLOT_PROGRESS_HANDOFF_RE = /(?:\[OUTPUT HARD BOUNDARY\]|\u7528\u6237\u672c\u8f6e\u8f93\u5165\u662f|\u8bf7\u53ea\u5438\u6536\u5267\u60c5\u63a8\u8fdb\u8f93\u51fa)/i;
   const MAIN_TEXT_BRACED_STRUCTURE_RE = /^\s*\{(?:content|now_plot|gametext|time)\}\s*([\s\S]*?)\s*$/i;
   const MAIN_TEXT_BARE_STRUCTURE_RE = /^\s*(?:content|now_plot|gametext|time)(?![\w.-])(?=\s*[\u3400-\u9fff「『“‘"{])\s*([\s\S]*?)\s*$/i;
   const MAIN_TEXT_STREAM_UPDATE_DEBOUNCE_MS = 160;
@@ -198,6 +199,7 @@
   const hashAttr = `dlou${toDatasetToken(MODULE_KIND)}Hash`;
   const mainTextStreamStates = new WeakMap();
   const mainTextElementCache = new WeakMap();
+  const mainTextOriginalRawCache = new WeakMap();
   const mainTextMessageCache = new Map();
 
   function toDatasetToken(value) {
@@ -359,7 +361,8 @@
 
   function rawLooksLikePlotProgressAudit(raw) {
     const text = String(raw || "");
-    return MAIN_TEXT_PLOT_PROGRESS_INPUT_RE.test(text) && MAIN_TEXT_PLOT_PROGRESS_AUDIT_RE.test(text);
+    if (!MAIN_TEXT_PLOT_PROGRESS_AUDIT_RE.test(text)) return false;
+    return MAIN_TEXT_PLOT_PROGRESS_INPUT_RE.test(text) || MAIN_TEXT_PLOT_PROGRESS_HANDOFF_RE.test(text);
   }
 
   function mainTextRawLooksStreaming(raw) {
@@ -387,6 +390,75 @@
       info.timer = 0;
     }
     mainTextStreamStates.delete(target);
+  }
+
+  function rememberMainTextOriginalRaw(target, raw) {
+    if (MODULE_KIND !== "main-text" || !target || target.nodeType !== Node.ELEMENT_NODE) return;
+    const text = String(raw || "");
+    if (!text) return;
+    mainTextOriginalRawCache.set(target, text);
+    try {
+      target.__DLOU_MAIN_TEXT_ORIGINAL_RAW = text;
+      target.dataset.dlouMainTextOriginalRawHash = stableHash(text);
+    } catch (_) {}
+  }
+
+  function mainTextRawFromMountedRoot(root) {
+    if (!root || !root.querySelector) return "";
+    const rawNode = root.querySelector("[data-raw-content]");
+    return rawNode ? String(rawNode.innerHTML || rawNode.textContent || "") : "";
+  }
+
+  function mainTextRawForEdit(messageNode, target, mountedRoot) {
+    if (MODULE_KIND !== "main-text") return "";
+    const candidates = [
+      target && target.__DLOU_MAIN_TEXT_ORIGINAL_RAW,
+      target && mainTextOriginalRawCache.get(target),
+      rawAttrsFrom(target),
+      rawAttrsFrom(messageNode),
+      rawNodeTextFrom(target),
+      rawNodeTextFrom(messageNode),
+      mainTextRawFromMountedRoot(mountedRoot),
+    ];
+    try {
+      const contextInfo = readRawFromContextInfo(messageNode || target, { allowGlobalFallback: isContextHostNode(messageNode || target) });
+      if (contextInfo && contextInfo.raw) candidates.push(contextInfo.raw);
+    } catch (_) {}
+    return candidates.map((item) => String(item || "")).find((item) => item.trim()) || "";
+  }
+
+  function restoreMainTextEditSurface(messageNode, target, mountedRoot) {
+    if (MODULE_KIND !== "main-text" || !target || target.nodeType !== Node.ELEMENT_NODE) return false;
+    const raw = mainTextRawForEdit(messageNode, target, mountedRoot);
+    const controls = [];
+    editableControlsOutsideHelper(messageNode).forEach((control) => controls.push(control));
+    editableControlsOutsideHelper(target).forEach((control) => {
+      if (!controls.includes(control)) controls.push(control);
+    });
+    if (mountedRoot && mountedRoot.parentNode) mountedRoot.remove();
+    resetMainTextStreamState(target);
+    clearMountState(target);
+    if (target.dataset) target.dataset.dlouMainTextWasEdited = "1";
+
+    if (controls.length) {
+      controls.forEach((control) => {
+        if (!raw) return;
+        const current = control.matches && control.matches("[contenteditable='true']")
+          ? control.textContent
+          : control.value;
+        if (String(current || "").trim() && !rawLooksLikeMainTextHelperUiText(current)) return;
+        if (control.matches && control.matches("[contenteditable='true']")) {
+          control.textContent = raw;
+        } else {
+          control.value = raw;
+        }
+      });
+      return true;
+    }
+
+    clearElement(target);
+    if (raw) target.textContent = raw;
+    return true;
   }
 
   function scheduleMainTextProcess(target, delay, readyHash = "") {
@@ -425,6 +497,7 @@
       info.rawSince = now;
     }
     const streamingLike = mainTextRawLooksStreaming(raw);
+    if (!streamingLike && target.dataset.dlouMainTextWasEdited === "1") return false;
     const limit = streamingLike ? MAIN_TEXT_STREAM_MARKER_GRACE_MS : MAIN_TEXT_STREAM_CLEAR_GRACE_MS;
     if (now - info.rawSince > limit) return false;
     state.lastMainTextStreamReason = streamingLike
@@ -541,11 +614,15 @@
       if (mountedModule === MODULE_KIND) return { status: MOUNT_STATUS_SKIPPED, hash };
       clearMountState(target);
     }
+    rememberMainTextOriginalRaw(target, raw);
     clearElement(target);
     clearMountState(target);
     target.dataset[doneAttr] = "1";
     target.dataset[hashAttr] = hash;
     target.dataset.dlouHelperModule = MODULE_KIND;
+    if (MODULE_KIND === "main-text") {
+      try { delete target.dataset.dlouMainTextWasEdited; } catch (_) {}
+    }
     return { status: MOUNT_STATUS_MOUNTED, hash };
   }
 
@@ -824,23 +901,34 @@
     return messageNodeLooksUserAuthored(messageNode) || messageContextLooksUserAuthored(messageNode);
   }
 
-  function hasEditableOutsideHelper(node) {
-    if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.querySelectorAll) return false;
+  function editableControlsOutsideHelper(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE || !node.querySelectorAll) return [];
     try {
-      return Array.from(node.querySelectorAll(EDITABLE_SOURCE_SELECTOR)).some((control) => {
-        return !(control.closest && control.closest(ROOT_SELECTOR_ALL));
-      });
+      const controls = [];
+      if (node.matches && node.matches(EDITABLE_SOURCE_SELECTOR)) controls.push(node);
+      node.querySelectorAll(EDITABLE_SOURCE_SELECTOR).forEach((control) => controls.push(control));
+      return controls.filter((control) => !(control.closest && control.closest(ROOT_SELECTOR_ALL)));
     } catch (_) {
-      return false;
+      return [];
     }
   }
 
-  function messageIsBeingEdited(messageNode, target) {
+  function hasEditableOutsideHelper(node) {
+    return editableControlsOutsideHelper(node).length > 0;
+  }
+
+  function messageIsBeingEdited(messageNode, target, mountedRoot = null) {
     if (MODULE_KIND !== "main-text") return false;
     try {
       if (messageNode && messageNode.matches && messageNode.matches(EDITING_MESSAGE_SELECTOR)) return true;
     } catch (_) {}
-    return hasEditableOutsideHelper(target) || hasEditableOutsideHelper(messageNode);
+    try {
+      if (target && target.matches && target.matches(EDITING_MESSAGE_SELECTOR)) return true;
+    } catch (_) {}
+    const hasEditable = hasEditableOutsideHelper(target) || hasEditableOutsideHelper(messageNode);
+    if (!hasEditable) return false;
+    if (mountedRoot && inferMountedModule(mountedRoot) === MODULE_KIND) return true;
+    return false;
   }
 
   function findContentContainer(node) {
@@ -1818,13 +1906,14 @@
     }
     const mountedRoot = findMountedUiRoot(target);
     const mountedModule = mountedRoot && (mountedRoot.getAttribute("data-dlou-helper-root") || inferMountedModule(mountedRoot));
-    if (messageLooksUserAuthored(messageNode)) {
-      state.lastSkipReason = "main-text-user-message";
+    if (messageIsBeingEdited(messageNode, target, mountedRoot)) {
+      const restored = mountedModule === MODULE_KIND && restoreMainTextEditSurface(messageNode, target, mountedRoot);
+      state.lastSkipReason = restored ? "editing-raw-restored" : "editing-message";
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
       return false;
     }
-    if (mountedModule === MODULE_KIND && messageIsBeingEdited(messageNode, target)) {
-      state.lastSkipReason = "mounted-editing-preserved";
+    if (messageLooksUserAuthored(messageNode)) {
+      state.lastSkipReason = "main-text-user-message";
       rememberCandidateSample(makeCandidateSample(candidate, messageNode, target, "", state.lastSkipReason, false));
       return false;
     }

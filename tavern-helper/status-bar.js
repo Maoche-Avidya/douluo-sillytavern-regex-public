@@ -62,6 +62,10 @@
     ".ds8[data-root]",
     "[data-root].ds8",
   ].join(",");
+  const MAIN_TEXT_ROOT_SELECTOR = [
+    "[data-main-text-root]",
+    ".dmt-root",
+  ].join(",");
   const EXCLUSIVE_MODULE_MARK_RE = /(?:\u3010\u5c01\u9762\u3011|\u3010\u89d2\u8272\u521b\u5efa\u3011)/;
   const REPOSITION_DELAY_MS = 80;
   const WATCHDOG_INTERVAL_MS = 1500;
@@ -441,15 +445,43 @@
     };
   }
 
+  function placementAfterMainText(message) {
+    if (!message || !message.querySelector) return null;
+    const contentTarget = messageContentTarget(message) || message;
+    const root = (contentTarget.querySelector && contentTarget.querySelector(MAIN_TEXT_ROOT_SELECTOR))
+      || message.querySelector(MAIN_TEXT_ROOT_SELECTOR);
+    if (!root || isInsideHost(root)) return null;
+    const target = root.parentElement;
+    if (!target || isInsideHost(target)) return null;
+    return {
+      target,
+      before: null,
+      mode: "main-text-tail",
+    };
+  }
+
   function findMountPlacement() {
     const container = findChatContainer();
     if (container) {
+      const latestSafeMessage = lastSafeMessage(container);
+      if (latestSafeMessage) {
+        const mainTextPlacement = placementAfterMainText(latestSafeMessage);
+        if (mainTextPlacement) {
+          mainTextPlacement.reason = "stable-main-text-tail";
+          return mainTextPlacement;
+        }
+        const messagePlacement = placementInMessageBlock(latestSafeMessage);
+        if (messagePlacement) {
+          messagePlacement.reason = "stable-message-block-tail";
+          return messagePlacement;
+        }
+      }
       const lastMessage = lastVisibleMessage(container);
       return {
         target: container,
         before: null,
         mode: "chat-tail",
-        reason: lastMessage ? (safeMessageSkipReason(lastMessage) || "stable-chat-tail") : "stable-chat-tail",
+        reason: lastMessage ? (safeMessageSkipReason(lastMessage) || "no-message-placement") : "no-message",
       };
     }
     for (const selector of FALLBACK_TARGET_SELECTORS) {
@@ -482,7 +514,7 @@
     host.id = HOST_ID;
     host.className = "dls-status-helper-host";
     host.setAttribute("data-douluo-status-helper", "");
-    host.dataset.open = "false";
+    host.dataset.open = "true";
     host.appendChild(createToggleButton());
     host.appendChild(createPanel());
     host.addEventListener("click", (event) => {
@@ -509,7 +541,7 @@
     if (!host) {
       host = createHost();
       runStatusApp(host.querySelector("[data-dls-root]"));
-      setOpen(openSetting());
+      setOpen(true);
     }
     return placeHost(host, findMountPlacement());
   }
@@ -606,7 +638,7 @@
     reposition();
     observeDocument();
     startWatchdog();
-    setOpen(openSetting());
+    setOpen(true);
     return host;
   }
 
