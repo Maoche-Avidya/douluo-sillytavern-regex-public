@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 状态栏 @0.6.6
+// @name         [助手]斗罗大陆 I-IV · Soul Land 状态栏 @0.6.7
 // @module       tavern-helper/status-bar
-// @version      @0.6.6
+// @version      @0.6.7
 // @source       tavern-helper-scripts/status-bar/dist/latest.json
 "use strict";
 

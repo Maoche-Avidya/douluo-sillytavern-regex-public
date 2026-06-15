@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.6.6
+// @name         [助手]斗罗大陆 I-IV · Soul Land 自动计算脚本 @0.6.7
 // @module       tavern-helper/auto-calc
-// @version      @0.6.6
+// @version      @0.6.7
 // @source       tavern-helper-scripts/auto-calc/dist/latest.json
 "use strict";
 
@@ -8,7 +8,7 @@
     'use strict';
 
     const SCRIPT_NAME = '斗罗自动计算脚本';
-    const VERSION = '0.6.6';
+    const VERSION = '0.6.7';
     const STORAGE_KEY = 'douluo_auto_calc_enabled';
     const LEGACY_STORAGE_KEYS = Object.freeze(['douluo_v03_auto_calc_enabled']);
     const EXTREME_ATTACK_MULTIPLIER = 1.5;

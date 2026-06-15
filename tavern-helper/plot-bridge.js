@@ -1,6 +1,6 @@
-// @name         [助手]斗罗大陆 I-IV · Soul Land 角色创建世界书桥接器 @0.6.6
+// @name         [助手]斗罗大陆 I-IV · Soul Land 角色创建世界书桥接器 @0.6.7
 // @module       tavern-helper/plot-bridge
-// @version      @0.6.6
+// @version      @0.6.7
 // @source       tavern-helper-scripts/plot-bridge/dist/latest.json
 "use strict";
 

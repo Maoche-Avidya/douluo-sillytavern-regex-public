@@ -1,6 +1,6 @@
-// @name         [Helper] DouLuo Creative Workshop @0.6.6
+// @name         [Helper] DouLuo Creative Workshop @0.6.7
 // @module       tavern-helper/creative-workshop
-// @version      @0.6.6
+// @version      @0.6.7
 // @source       tavern-helper-scripts/creative-workshop/dist/latest.json
 "use strict";
 
