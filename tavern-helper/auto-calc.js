@@ -185,28 +185,18 @@
     let lastInputHash = '';
     let pendingAutoRecalc = null;
     let tableUpdateCallback = null;
+    let lastTransientWriteFailure = null;
+    let sqliteRetryDelayMs = 1500;
+    let lastSqliteNotReadyNoticeAt = 0;
     let lastCoreInputWarningAt = 0;
     let lastCoreInputWarningSignature = '';
     const CORE_INPUT_AUTO_WARNING_COOLDOWN_MS = 60000;
+    const SQLITE_STARTUP_RECALC_DELAY_MS = 1600;
+    const SQLITE_NOT_READY_RETRY_MIN_MS = 1500;
+    const SQLITE_NOT_READY_RETRY_MAX_MS = 8000;
+    const SQLITE_NOT_READY_NOTICE_COOLDOWN_MS = 10000;
+    const SQLITE_NOT_READY_PATTERN = /SQLite\s*(?:引擎)?(?:未初始化|not\s+initialized)|SqlTableService|loadFromChat\(\)/i;
     const preferredWriteTableNames = new Map();
-    const VISUALIZER_ROOT_SELECTOR = [
-        '.acu-wrapper',
-        '.acu-embedded-options-container',
-        '.acu-embedded-dashboard-container',
-        '.auto-card-updater-popup',
-    ].join(',');
-    const VISUALIZER_BUSY_SELECTOR = [
-        '.acu-edit-overlay',
-        '.acu-popup-overlay',
-        '.acu-quick-view-overlay',
-        '.acu-cell-menu',
-        '.acu-menu-backdrop',
-        '.acu-window-overlay',
-        '#acu-btn-save-global:disabled',
-        '.acu-btn-save-mode',
-        '.acu-wrapper .fa-spinner.fa-spin',
-    ].join(',');
-
     function log(...args) {
         if (CONFIG.debug) console.log(`[${SCRIPT_NAME}]`, ...args);
     }
@@ -250,33 +240,6 @@
         return null;
     }
 
-    function hostDocuments() {
-        const docs = [];
-        for (const host of hostWindows()) {
-            try {
-                const doc = host.document;
-                if (doc && doc.querySelector && !docs.includes(doc)) docs.push(doc);
-            } catch (_) {}
-        }
-        return docs;
-    }
-
-    function hasDocumentMatch(selector) {
-        for (const doc of hostDocuments()) {
-            try {
-                if (doc.querySelector(selector)) return true;
-            } catch (_) {}
-        }
-        return false;
-    }
-
-    function visualizerCompatState() {
-        return {
-            detected: hasDocumentMatch(VISUALIZER_ROOT_SELECTOR),
-            busy: hasDocumentMatch(VISUALIZER_BUSY_SELECTOR),
-        };
-    }
-
     function getDatabaseApi() {
         return getHostGlobal('AutoCardUpdaterAPI');
     }
@@ -293,6 +256,77 @@
             console.warn(`[${SCRIPT_NAME}] exportTableAsJson failed`, error);
             return fallback;
         }
+    }
+
+    function failureMessage(value) {
+        if (value === undefined || value === null) return '';
+        if (typeof value === 'string') return value;
+        if (value instanceof Error) return value.message || String(value);
+        if (typeof value === 'object') {
+            const parts = [];
+            if (value.message) parts.push(value.message);
+            if (value.error) parts.push(typeof value.error === 'string' ? value.error : failureMessage(value.error));
+            if (Array.isArray(value.errors)) parts.push(...value.errors.map(failureMessage));
+            if (value.reason) parts.push(value.reason);
+            return parts.filter(Boolean).join('; ');
+        }
+        return String(value);
+    }
+
+    function isSqliteNotReadyFailure(value) {
+        return SQLITE_NOT_READY_PATTERN.test(failureMessage(value));
+    }
+
+    function transientWriteFailure(action, tableName, error, context = {}) {
+        const failure = {
+            ok: false,
+            retryable: true,
+            transient: true,
+            reason: 'sqlite-not-ready',
+            action,
+            tableName,
+            error: failureMessage(error) || 'sqlite-not-ready',
+            writeContext: context,
+        };
+        lastTransientWriteFailure = failure;
+        return failure;
+    }
+
+    function resetTransientWriteFailure() {
+        lastTransientWriteFailure = null;
+    }
+
+    function isTransientSqliteWriteFailure(result) {
+        return !!(result && typeof result === 'object' && (result.reason === 'sqlite-not-ready' || result.transient) && result.retryable);
+    }
+
+    function scheduleSqliteNotReadyRetry(options = {}) {
+        if (!autoEnabled() || options.skipSqliteRetry) return false;
+        const delayMs = Math.max(SQLITE_NOT_READY_RETRY_MIN_MS, Math.min(sqliteRetryDelayMs, SQLITE_NOT_READY_RETRY_MAX_MS));
+        sqliteRetryDelayMs = Math.min(SQLITE_NOT_READY_RETRY_MAX_MS, Math.max(SQLITE_NOT_READY_RETRY_MIN_MS, delayMs * 2));
+        scheduleAutoRecalculate('sqlite-not-ready-retry', delayMs, { allowWhileWriting: true });
+        return true;
+    }
+
+    function maybeNoticeSqliteNotReady(options = {}) {
+        if (options.quiet || options.silent) return;
+        const now = Date.now();
+        if (now - lastSqliteNotReadyNoticeAt < SQLITE_NOT_READY_NOTICE_COOLDOWN_MS) return;
+        lastSqliteNotReadyNoticeAt = now;
+        recalcToast(options, 'SQLite database is still loading; auto-calc will retry shortly.', 'warning', 'normal');
+    }
+
+    function transientSqliteResult(options = {}, failedWrites = []) {
+        const retryScheduled = scheduleSqliteNotReadyRetry(options);
+        maybeNoticeSqliteNotReady(options);
+        return {
+            ok: false,
+            skipped: true,
+            reason: 'sqlite-not-ready',
+            retryScheduled,
+            failedWrites,
+            transientWriteFailure: lastTransientWriteFailure,
+        };
     }
 
     function getSillyTavernContext() {
@@ -591,6 +625,11 @@
         return tableNames.filter(tableName => !getSheet(db, tableName));
     }
 
+    function visibleTableCount(db, tableNames = REQUIRED_TEMPLATE_TABLES) {
+        if (!db || typeof db !== 'object') return 0;
+        return tableNames.filter(tableName => getSheet(db, tableName)).length;
+    }
+
     function databaseRepairHint(missing) {
         const listed = missing.slice(0, 6).join('、');
         const suffix = missing.length > 6 ? ` 等${missing.length}张表` : '';
@@ -601,6 +640,19 @@
         const missing = missingTables(db, tableNames);
         if (!missing.length) return { ok: true, missing: [], message: '' };
         return { ok: false, missing, message: databaseRepairHint(missing) };
+    }
+
+    function shouldDeferForSqliteStartup(db, readiness) {
+        if (!db || typeof db !== 'object') return true;
+        if (visibleTableCount(db) === 0) return true;
+        return !!(readiness && Array.isArray(readiness.missing) && readiness.missing.length === CORE_RECALC_TABLES.length
+            && visibleTableCount(db, CORE_RECALC_TABLES) === 0);
+    }
+
+    function sqliteStartupResult(options = {}, readiness = { missing: [] }) {
+        const missing = Array.isArray(readiness.missing) ? readiness.missing : [];
+        transientWriteFailure('database-readiness', missing[0] || '', 'database export is not ready', { missingTables: missing });
+        return transientSqliteResult(options, missing.map(tableName => `${tableName}:sqlite-not-ready`));
     }
 
     function rowToObject(headers, row, rowIndex, sheet = null, tableName = '') {
@@ -1856,8 +1908,9 @@
         const failed = [];
         for (const update of updates) {
             if (!update || !update.table || !update.rowIndex || !update.data) continue;
-            const result = await updateRowCompat(update.table, update.rowIndex, update.data, options);
+            const result = await updateRowWithKeyedRetry(update, options);
             if (apiWriteFailed(result)) failed.push(`${update.table}:updateRow failed${writeFailureDetail(result)}`);
+            if (isTransientSqliteWriteFailure(result)) break;
         }
         return failed;
     }
@@ -1911,12 +1964,14 @@
             if (changed) {
                 const result = await updateRowCompat(CONFIG.tables.backpack, keeper.__rowIndex, merged, options);
                 if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe update failed${writeFailureDetail(result)}`);
+                if (isTransientSqliteWriteFailure(result)) return failed;
             }
             duplicateRows.push(...group.slice(1));
         }
         for (const row of duplicateRows.sort((a, b) => b.__rowIndex - a.__rowIndex)) {
             const result = await deleteRowCompat(CONFIG.tables.backpack, row.__rowIndex, options);
             if (apiWriteFailed(result)) failed.push(`${CONFIG.tables.backpack}:dedupe delete failed${writeFailureDetail(result)}`);
+            if (isTransientSqliteWriteFailure(result)) break;
         }
         return failed;
     }
@@ -2002,7 +2057,9 @@
 
     function addMappingOp(db, ops, tableName, data, options = {}) {
         const target = resolveMappingRow(db, tableName, options);
-        ops.push({ table: tableName, rowIndex: target.rowIndex, mode: target.mode, data });
+        const keyFields = configuredKeyFieldsForTable(tableName);
+        const keyData = Object.fromEntries(keyFields.map(field => [field, data?.[field]]).filter(([, value]) => asText(value)));
+        ops.push({ table: tableName, rowIndex: target.rowIndex, mode: target.mode, data, keyData });
     }
 
     function payloadSoulName(soul, index) {
@@ -3179,6 +3236,35 @@
             || (result && typeof result === 'object' && result.changes !== undefined && Number(result.changes) <= 0);
     }
 
+    function writeContextFromOptions(action, tableName, candidateName, options = {}, extra = {}) {
+        return {
+            action,
+            table: tableName,
+            candidateName,
+            rowIndex: options.rowIndex ?? extra.rowIndex,
+            keyData: options.keyData || extra.keyData || null,
+            sourceRow: options.sourceRow || extra.sourceRow || null,
+            retry: Boolean(extra.retry),
+        };
+    }
+
+    function contextualWriteFailure(result, context) {
+        if (!apiWriteFailed(result)) return result;
+        const base = result && typeof result === 'object'
+            ? { ...result }
+            : { ok: false, result };
+        base.writeContext = {
+            ...(base.writeContext || {}),
+            ...(context || {}),
+        };
+        if (base.changes !== undefined && base.affected === undefined) base.affected = base.changes;
+        return base;
+    }
+
+    function writeFailureContext(result) {
+        return result && typeof result === 'object' ? (result.writeContext || null) : null;
+    }
+
     function configuredKeyFieldsForTable(tableName) {
         const uniqueFields = templateUniqueFields(tableName);
         if (uniqueFields.length) return uniqueFields;
@@ -3198,19 +3284,78 @@
         return rows(db, tableName).some(row => rowMatchesBusinessKey(row, data, keyFields));
     }
 
-    async function updateRowWithKeyedInsertFallback(op, options = {}) {
-        const result = await updateRowCompat(op.table, op.rowIndex, op.data, options);
+    function businessKeyRow(db, tableName, data, keyFields) {
+        return rows(db, tableName).find(row => rowMatchesBusinessKey(row, data, keyFields)) || null;
+    }
+
+    function keyDataForOperation(op) {
+        if (op?.keyData && Object.keys(op.keyData).length) return { ...op.keyData };
+        const keyFields = configuredKeyFieldsForTable(op?.table);
+        return Object.fromEntries(keyFields.map(field => [field, op?.data?.[field]]).filter(([, value]) => asText(value)));
+    }
+
+    async function retryUpdateRowByBusinessKey(op, result, options = {}) {
+        if (!op || SINGLETON_TABLES.includes(op.table) || isTransientSqliteWriteFailure(result)) return null;
+        const configuredKeyFields = configuredKeyFieldsForTable(op.table);
+        const keyData = keyDataForOperation(op);
+        const keyFields = configuredKeyFields.filter(field => asText(keyData[field]));
+        if (!keyFields.length || keyFields.length !== configuredKeyFields.length) return null;
+        if (typeof api.refreshDataAndWorldbook === 'function') {
+            try { await api.refreshDataAndWorldbook(); } catch (_) {}
+        }
+        const refreshed = exportDatabase(null);
+        const matched = businessKeyRow(refreshed, op.table, keyData, keyFields);
+        if (!matched || !matched.__rowIndex || matched.__rowIndex === op.rowIndex) return null;
+        const retryResult = await updateRowCompat(op.table, matched.__rowIndex, op.data, {
+            ...options,
+            keyData,
+            sourceRow: op.sourceRow,
+            source: 'douluo-auto-calc:keyed-update-retry',
+        });
+        if (!apiWriteFailed(retryResult)) {
+            console.warn(`[${SCRIPT_NAME}] updateRow failed; retried by business key for ${op.table}`, {
+                oldRowIndex: op.rowIndex,
+                newRowIndex: matched.__rowIndex,
+                keyFields,
+            });
+        }
+        return retryResult;
+    }
+
+    async function updateRowWithKeyedRetry(op, options = {}) {
+        const keyData = keyDataForOperation(op);
+        const result = await updateRowCompat(op.table, op.rowIndex, op.data, {
+            ...options,
+            keyData,
+            sourceRow: op.sourceRow,
+        });
         if (!apiWriteFailed(result)) return result;
+        const retryResult = await retryUpdateRowByBusinessKey(op, result, options);
+        return retryResult || result;
+    }
+
+    async function updateRowWithKeyedInsertFallback(op, options = {}) {
+        const result = await updateRowWithKeyedRetry(op, options);
+        if (!apiWriteFailed(result)) return result;
+        if (isTransientSqliteWriteFailure(result)) return result;
         if (!api || typeof api.insertRow !== 'function' || SINGLETON_TABLES.includes(op.table)) return result;
 
         const configuredKeyFields = configuredKeyFieldsForTable(op.table);
-        const keyFields = keyFieldsForTable(op.table, op.data);
+        const keyData = keyDataForOperation(op);
+        const keyFields = keyFieldsForTable(op.table, keyData);
         if (!keyFields.length || keyFields.length !== configuredKeyFields.length) {
-            const missingKeys = configuredKeyFields.filter(field => !asText(op.data?.[field]));
+            const missingKeys = configuredKeyFields.filter(field => !asText(keyData[field]));
             return {
                 ok: false,
                 error: `updateRow failed; keyed insert fallback skipped for ${op.table}: missing unique key ${missingKeys.join('/') || 'unknown'}`,
                 originalResult: result,
+                writeContext: writeFailureContext(result) || {
+                    action: 'updateRow',
+                    table: op.table,
+                    rowIndex: op.rowIndex,
+                    keyData,
+                    sourceRow: op.sourceRow || null,
+                },
             };
         }
 
@@ -3218,9 +3363,9 @@
             try { await api.refreshDataAndWorldbook(); } catch (_) {}
         }
         const refreshed = exportDatabase(null);
-        if (businessKeyExists(refreshed, op.table, op.data, keyFields)) return result;
+        if (businessKeyExists(refreshed, op.table, keyData, keyFields)) return result;
 
-        const fallback = await insertRowCompat(op.table, op.data, { ...options, source: 'douluo-auto-calc:update-insert-fallback' });
+        const fallback = await insertRowCompat(op.table, op.data, { ...options, keyData, sourceRow: op.sourceRow, source: 'douluo-auto-calc:update-insert-fallback' });
         if (!apiWriteFailed(fallback)) {
             console.warn(`[${SCRIPT_NAME}] updateRow failed; inserted keyed fallback row for ${op.table}`, {
                 rowIndex: op.rowIndex,
@@ -3233,12 +3378,33 @@
 
     function writeFailureDetail(result) {
         if (!result || typeof result !== 'object') return '';
-        if (result.error) return `:${result.error}`;
-        if (Array.isArray(result.errors) && result.errors.length) return `:${result.errors.join(';')}`;
-        if (result.success === false) return ':success=false';
-        if (result.ok === false) return ':ok=false';
-        if (result.changes !== undefined && Number(result.changes) <= 0) return ':affected 0 rows';
-        return '';
+        if (isTransientSqliteWriteFailure(result)) return ':sqlite-not-ready';
+        const parts = [];
+        if (result.error) parts.push(result.error);
+        if (Array.isArray(result.errors) && result.errors.length) parts.push(result.errors.join(';'));
+        if (result.success === false) parts.push('success=false');
+        if (result.ok === false) parts.push('ok=false');
+        if (result.changes !== undefined && Number(result.changes) <= 0) parts.push('affected 0 rows');
+        if (result.affected !== undefined && Number(result.affected) <= 0 && !parts.includes('affected 0 rows')) parts.push('affected 0 rows');
+        const context = writeFailureContext(result);
+        if (context) {
+            if (context.candidateName && context.candidateName !== context.table) parts.push(`candidate=${context.candidateName}`);
+            if (context.rowIndex) parts.push(`rowIndex=${context.rowIndex}`);
+            const keyData = context.keyData || {};
+            const keyText = Object.entries(keyData)
+                .filter(([, value]) => asText(value))
+                .map(([key, value]) => `${key}=${asText(value)}`)
+                .join(',');
+            if (keyText) parts.push(`key=${keyText}`);
+            const sourceRow = context.sourceRow || {};
+            const rowText = Object.entries(sourceRow)
+                .filter(([, value]) => asText(value))
+                .map(([key, value]) => `${key}=${asText(value)}`)
+                .join(',');
+            if (rowText) parts.push(`sourceRow=${rowText}`);
+            if (context.retry) parts.push('retry=true');
+        }
+        return parts.length ? `:${parts.join(';')}` : '';
     }
 
     function writeMutationOptions(options = {}) {
@@ -3268,8 +3434,16 @@
                         rememberWriteTableName(tableName, candidateName);
                         return result;
                     }
-                    lastResult = result;
+                    const context = writeContextFromOptions('updateRow', tableName, candidateName, options, { rowIndex });
+                    if (isSqliteNotReadyFailure(result)) {
+                        return transientWriteFailure('updateRow', candidateName, result, context);
+                    }
+                    lastResult = contextualWriteFailure(result, context);
                 } catch (error) {
+                    const context = writeContextFromOptions('updateRow', tableName, candidateName, options, { rowIndex });
+                    if (isSqliteNotReadyFailure(error)) {
+                        return transientWriteFailure('updateRow', candidateName, error, context);
+                    }
                     console.warn(`[${SCRIPT_NAME}] updateRow object args failed for ${candidateName}`, error);
                 }
             }
@@ -3281,8 +3455,16 @@
                     rememberWriteTableName(tableName, candidateName);
                     return result;
                 }
-                lastResult = result;
+                const context = writeContextFromOptions('updateRow', tableName, candidateName, options, { rowIndex });
+                if (isSqliteNotReadyFailure(result)) {
+                    return transientWriteFailure('updateRow', candidateName, result, context);
+                }
+                lastResult = contextualWriteFailure(result, context);
             } catch (error) {
+                const context = writeContextFromOptions('updateRow', tableName, candidateName, options, { rowIndex });
+                if (isSqliteNotReadyFailure(error)) {
+                    return transientWriteFailure('updateRow', candidateName, error, context);
+                }
                 if (options.fallbackObject === false) throw error;
                 console.warn(`[${SCRIPT_NAME}] updateRow legacy args failed for ${candidateName}`, error);
             }
@@ -3306,8 +3488,16 @@
                         rememberWriteTableName(tableName, candidateName);
                         return result;
                     }
-                    lastResult = result;
+                    const context = writeContextFromOptions('insertRow', tableName, candidateName, options);
+                    if (isSqliteNotReadyFailure(result)) {
+                        return transientWriteFailure('insertRow', candidateName, result, context);
+                    }
+                    lastResult = contextualWriteFailure(result, context);
                 } catch (error) {
+                    const context = writeContextFromOptions('insertRow', tableName, candidateName, options);
+                    if (isSqliteNotReadyFailure(error)) {
+                        return transientWriteFailure('insertRow', candidateName, error, context);
+                    }
                     console.warn(`[${SCRIPT_NAME}] insertRow object args failed for ${candidateName}`, error);
                 }
             }
@@ -3319,8 +3509,16 @@
                     rememberWriteTableName(tableName, candidateName);
                     return result;
                 }
-                lastResult = result;
+                const context = writeContextFromOptions('insertRow', tableName, candidateName, options);
+                if (isSqliteNotReadyFailure(result)) {
+                    return transientWriteFailure('insertRow', candidateName, result, context);
+                }
+                lastResult = contextualWriteFailure(result, context);
             } catch (error) {
+                const context = writeContextFromOptions('insertRow', tableName, candidateName, options);
+                if (isSqliteNotReadyFailure(error)) {
+                    return transientWriteFailure('insertRow', candidateName, error, context);
+                }
                 if (options.fallbackObject === false) throw error;
                 console.warn(`[${SCRIPT_NAME}] insertRow legacy args failed for ${candidateName}`, error);
             }
@@ -3344,8 +3542,16 @@
                         rememberWriteTableName(tableName, candidateName);
                         return result;
                     }
-                    lastResult = result;
+                    const context = writeContextFromOptions('deleteRow', tableName, candidateName, options, { rowIndex });
+                    if (isSqliteNotReadyFailure(result)) {
+                        return transientWriteFailure('deleteRow', candidateName, result, context);
+                    }
+                    lastResult = contextualWriteFailure(result, context);
                 } catch (error) {
+                    const context = writeContextFromOptions('deleteRow', tableName, candidateName, options, { rowIndex });
+                    if (isSqliteNotReadyFailure(error)) {
+                        return transientWriteFailure('deleteRow', candidateName, error, context);
+                    }
                     console.warn(`[${SCRIPT_NAME}] deleteRow object args failed for ${candidateName}`, error);
                 }
             }
@@ -3357,8 +3563,16 @@
                     rememberWriteTableName(tableName, candidateName);
                     return result;
                 }
-                lastResult = result;
+                const context = writeContextFromOptions('deleteRow', tableName, candidateName, options, { rowIndex });
+                if (isSqliteNotReadyFailure(result)) {
+                    return transientWriteFailure('deleteRow', candidateName, result, context);
+                }
+                lastResult = contextualWriteFailure(result, context);
             } catch (error) {
+                const context = writeContextFromOptions('deleteRow', tableName, candidateName, options, { rowIndex });
+                if (isSqliteNotReadyFailure(error)) {
+                    return transientWriteFailure('deleteRow', candidateName, error, context);
+                }
                 if (options.fallbackObject === false) throw error;
                 console.warn(`[${SCRIPT_NAME}] deleteRow legacy args failed for ${candidateName}`, error);
             }
@@ -3439,6 +3653,70 @@
         }).filter(Boolean);
     }
 
+    function tableIssue(table, code, message, details = {}) {
+        return { table, code, message, ...details };
+    }
+
+    function dataRowHasPayload(row) {
+        return Object.entries(row || {}).some(([field, value]) =>
+            !field.startsWith('__') && !['row_id', '行号', '行编号'].includes(field) && singletonCellHasValue(value));
+    }
+
+    function pushWritebackRisk(out, table, code, message, details = {}) {
+        out.push(tableIssue(table, code, message, details));
+    }
+
+    function analyzeSoulOverviewRows(label, rowsList, tableIssues, writebackRisks) {
+        const seqSeen = new Map();
+        const nameSeen = new Map();
+        rowsList.forEach((row, index) => {
+            if (!dataRowHasPayload(row)) return;
+            const rowNumber = index + 1;
+            const rowId = rowIdText(row);
+            const seq = asText(cell(row, '序号'));
+            const name = asText(cell(row, '武魂名称'));
+            if (!rowId) {
+                tableIssues.push(tableIssue(label, 'soul-row-id-missing', `${label}: 第 ${rowNumber} 行 row_id 为空`, { rowIndex: row.__rowIndex }));
+                pushWritebackRisk(writebackRisks, label, 'affected-zero-risk', '武魂总览表 row_id 为空，SQLite updateRow 可能 affected 0 rows', { rowIndex: row.__rowIndex, seq, name });
+            }
+            if (!seq) {
+                tableIssues.push(tableIssue(label, 'soul-seq-missing', `${label}: 第 ${rowNumber} 行缺少序号`, { rowIndex: row.__rowIndex, rowId, name }));
+            } else if (!Number.isFinite(Number(seq))) {
+                tableIssues.push(tableIssue(label, 'soul-seq-invalid', `${label}: 第 ${rowNumber} 行序号不是数字：${seq}`, { rowIndex: row.__rowIndex, rowId, seq, name }));
+            } else if (seqSeen.has(seq)) {
+                tableIssues.push(tableIssue(label, 'soul-seq-duplicate', `${label}: 序号重复 ${seq}`, { rowIndex: row.__rowIndex, firstRowIndex: seqSeen.get(seq), rowId, seq, name }));
+            }
+            if (seq) seqSeen.set(seq, seqSeen.get(seq) || row.__rowIndex || rowNumber);
+            if (!name) {
+                tableIssues.push(tableIssue(label, 'soul-name-missing', `${label}: 第 ${rowNumber} 行缺少武魂名称`, { rowIndex: row.__rowIndex, rowId, seq }));
+                pushWritebackRisk(writebackRisks, label, 'missing-business-key', '武魂总览表缺少武魂名称，无法按业务键安全重试/新增', { rowIndex: row.__rowIndex, rowId, seq });
+            } else if (nameSeen.has(name)) {
+                tableIssues.push(tableIssue(label, 'soul-name-duplicate', `${label}: 武魂名称重复 ${name}`, { rowIndex: row.__rowIndex, firstRowIndex: nameSeen.get(name), rowId, seq, name }));
+            }
+            if (name) nameSeen.set(name, nameSeen.get(name) || row.__rowIndex || rowNumber);
+        });
+    }
+
+    function analyzeRingKeyRows(label, rowsList, tableIssues, writebackRisks) {
+        const seen = new Map();
+        rowsList.forEach((row, index) => {
+            if (!dataRowHasPayload(row)) return;
+            const rowNumber = index + 1;
+            const soulName = asText(cell(row, '武魂名称'));
+            const ringIndex = asText(cell(row, '魂环序号'));
+            if (!soulName || !ringIndex) {
+                tableIssues.push(tableIssue(label, 'ring-key-missing', `${label}: 第 ${rowNumber} 行缺少武魂名称或魂环序号`, { rowIndex: row.__rowIndex, soulName, ringIndex }));
+                pushWritebackRisk(writebackRisks, label, 'missing-business-key', `${label} 缺少 武魂名称 + 魂环序号，无法按业务键安全重试`, { rowIndex: row.__rowIndex, soulName, ringIndex });
+                return;
+            }
+            const keyText = `${soulName}\u0001${ringIndex}`;
+            if (seen.has(keyText)) {
+                tableIssues.push(tableIssue(label, 'ring-key-duplicate', `${label}: 武魂名称 + 魂环序号 重复 ${soulName}/${ringIndex}`, { rowIndex: row.__rowIndex, firstRowIndex: seen.get(keyText), soulName, ringIndex }));
+            }
+            seen.set(keyText, seen.get(keyText) || row.__rowIndex || rowNumber);
+        });
+    }
+
     function diagnoseDatabase(dbOverride = null) {
         const db = dbOverride || exportDatabase(null);
         const issues = [];
@@ -3453,12 +3731,21 @@
         const exportShapeIssues = [];
         const singletonIssues = [];
         const singletonRowIdNotes = [];
-        if (!db) return { ok: false, issues: ['无法读取数据库'], missingTables: [], legacyNotNullColumns, physicalFieldTables, physicalFieldsWithoutDdl, physicalColumnIssues, rowIdIssues, affectedZeroRisks, upsertKeyIssues, exportShapeIssues, singletonIssues, singletonRowIdNotes };
+        const tableIssues = [];
+        const writebackRisks = [];
+        const keyedTableStats = [];
+        const sheetEntries = db ? databaseSheets(db) : [];
+        const recognizedTableCount = db ? REQUIRED_TEMPLATE_TABLES.filter(tableName => getSheet(db, tableName)).length : 0;
+        if (!db) return { ok: false, issues: ['无法读取数据库'], missingTables: [], tableCount: 0, tableIssues, writebackRisks, keyedTableStats, legacyNotNullColumns, physicalFieldTables, physicalFieldsWithoutDdl, physicalColumnIssues, rowIdIssues, affectedZeroRisks, upsertKeyIssues, exportShapeIssues, singletonIssues, singletonRowIdNotes };
         if (missing.length) {
             issues.push(databaseRepairHint(missing));
-            missing.forEach(tableName => issues.push(`缺少表：${tableName}`));
+            missing.forEach(tableName => {
+                issues.push(`缺少表：${tableName}`);
+                tableIssues.push(tableIssue(tableName, 'missing-table', `缺少表：${tableName}`));
+                pushWritebackRisk(writebackRisks, tableName, 'missing-table', `${tableName} 缺失，相关 auto-calc 写回会失败`);
+            });
         }
-        for (const { key, sheet } of databaseSheets(db)) {
+        for (const { key, sheet } of sheetEntries) {
             const label = sheet.name || sheet.tableName || sheet.uid || key;
             const logicalLabel = sheet.displayName || DISPLAY_TABLE_NAMES[label] || label;
             const ddl = sheetDdl(sheet);
@@ -3477,6 +3764,8 @@
                     Array.isArray(sheet.data) ? 'data' : '',
                 ].filter(Boolean).join('+');
                 exportShapeIssues.push(`${label}: ${shapes || 'non-content'} export`);
+                tableIssues.push(tableIssue(logicalLabel, 'non-content-export', `${label}: ${shapes || 'non-content'} export`, { label, shape: shapes || 'non-content' }));
+                pushWritebackRisk(writebackRisks, logicalLabel, 'non-standard-export-shape', `${logicalLabel} 导出形态不是标准 content[0] 表头，rowIndex 写回可能失效`, { label, shape: shapes || 'non-content' });
                 if (SINGLETON_TABLES.includes(logicalLabel)) {
                     const issue = `${label}: non-standard export shape ${shapes || 'non-content'}`;
                     if (!singletonIssues.includes(issue)) singletonIssues.push(issue);
@@ -3495,6 +3784,8 @@
                     physicalFieldsWithoutDdl.push(label);
                     physicalColumnIssues.push(`${label}: ${physicalHeaders.slice(0, 6).join('/')}`);
                     affectedZeroRisks.push(`${label}: physical headers without DDL`);
+                    tableIssues.push(tableIssue(logicalLabel, 'physical-headers-without-ddl', `${label}: 物理字段表头缺少 DDL 注释`, { label, physicalHeaders: physicalHeaders.slice(0, 8) }));
+                    pushWritebackRisk(writebackRisks, logicalLabel, 'physical-headers-without-ddl', `${logicalLabel} 物理字段缺少 DDL 注释，字段映射可能错位`, { label });
                 }
             }
             if (dataRows.length) {
@@ -3504,9 +3795,13 @@
                     const text = asText(rowId);
                     if (!text) {
                         rowIdIssues.push(`${label}: 第 ${index + 1} 行 row_id 为空`);
+                        tableIssues.push(tableIssue(logicalLabel, 'row-id-missing', `${label}: 第 ${index + 1} 行 row_id 为空`, { label, rowIndex: row.__rowIndex }));
+                        pushWritebackRisk(writebackRisks, logicalLabel, 'affected-zero-risk', `${logicalLabel} 存在空 row_id，SQLite updateRow 可能 affected 0 rows`, { label, rowIndex: row.__rowIndex });
                         if (SINGLETON_TABLES.includes(logicalLabel)) singletonIssues.push(`${label}: empty row_id at row ${index + 1}`);
                     } else if (seen.has(text)) {
                         rowIdIssues.push(`${label}: row_id ${text} 重复`);
+                        tableIssues.push(tableIssue(logicalLabel, 'row-id-duplicate', `${label}: row_id ${text} 重复`, { label, rowId: text, rowIndex: row.__rowIndex }));
+                        pushWritebackRisk(writebackRisks, logicalLabel, 'affected-zero-risk', `${logicalLabel} 存在重复 row_id，SQLite updateRow 可能定位异常`, { label, rowId: text, rowIndex: row.__rowIndex });
                         if (SINGLETON_TABLES.includes(logicalLabel)) singletonIssues.push(`${label}: duplicate row_id ${text}`);
                     }
                     seen.add(text);
@@ -3515,6 +3810,8 @@
                     if (dataRows.length > 1) {
                         rowIdIssues.push(`${label}: 单例表存在 ${dataRows.length} 行`);
                         singletonIssues.push(`${label}: multiple singleton rows ${dataRows.length}`);
+                        tableIssues.push(tableIssue(logicalLabel, 'singleton-multiple-rows', `${label}: 单例表存在 ${dataRows.length} 行`, { label, rowCount: dataRows.length }));
+                        pushWritebackRisk(writebackRisks, logicalLabel, 'unsafe-singleton', `${logicalLabel} 单例表多行，auto-calc 会停止危险修复`, { label, rowCount: dataRows.length });
                     }
                     const firstRowId = asText(dataRows[0]?.__rowId ?? dataRows[0]?.row_id ?? dataRows[0]?.['行号']);
                     if (firstRowId && firstRowId !== '1') singletonRowIdNotes.push(`${label}: singleton row_id is ${firstRowId}`);
@@ -3522,19 +3819,35 @@
                 const keyFields = configuredKeyFieldsForTable(logicalLabel);
                 if (keyFields.length) {
                     const keySeen = new Map();
+                    let effectiveRows = 0;
+                    let missingKeyRows = 0;
+                    let duplicateKeys = 0;
                     dataRows.forEach((row, index) => {
-                        const hasData = Object.entries(row).some(([field, value]) => !field.startsWith('__') && field !== 'row_id' && singletonCellHasValue(value));
+                        const hasData = dataRowHasPayload(row);
                         if (!hasData) return;
+                        effectiveRows += 1;
                         const missingKeys = keyFields.filter(field => empty(cell(row, field)));
                         if (missingKeys.length) {
+                            missingKeyRows += 1;
                             upsertKeyIssues.push(`${label}: 第 ${index + 1} 行缺少唯一键 ${missingKeys.join('/')}`);
+                            tableIssues.push(tableIssue(logicalLabel, 'unique-key-missing', `${label}: 第 ${index + 1} 行缺少唯一键 ${missingKeys.join('/')}`, { label, rowIndex: row.__rowIndex, keyFields, missingKeys }));
+                            pushWritebackRisk(writebackRisks, logicalLabel, 'missing-business-key', `${logicalLabel} 缺少唯一键 ${missingKeys.join('/')}，无法安全 retry/insert`, { label, rowIndex: row.__rowIndex, keyFields, missingKeys });
                             return;
                         }
                         const keyText = keyFields.map(field => asText(cell(row, field))).join('\u0001');
-                        if (keySeen.has(keyText)) upsertKeyIssues.push(`${label}: 唯一键重复 ${keyFields.join('+')}=${keyFields.map(field => asText(cell(row, field))).join('+')}`);
-                        keySeen.set(keyText, true);
+                        if (keySeen.has(keyText)) {
+                            duplicateKeys += 1;
+                            const displayKey = keyFields.map(field => asText(cell(row, field))).join('+');
+                            upsertKeyIssues.push(`${label}: 唯一键重复 ${keyFields.join('+')}=${displayKey}`);
+                            tableIssues.push(tableIssue(logicalLabel, 'unique-key-duplicate', `${label}: 唯一键重复 ${keyFields.join('+')}=${displayKey}`, { label, rowIndex: row.__rowIndex, firstRowIndex: keySeen.get(keyText), keyFields, key: displayKey }));
+                            pushWritebackRisk(writebackRisks, logicalLabel, 'duplicate-business-key', `${logicalLabel} 业务唯一键重复，updateRow fallback 可能误判`, { label, rowIndex: row.__rowIndex, firstRowIndex: keySeen.get(keyText), keyFields, key: displayKey });
+                        }
+                        keySeen.set(keyText, keySeen.get(keyText) || row.__rowIndex || index + 1);
                     });
+                    keyedTableStats.push({ table: logicalLabel, label, keyFields, effectiveRows, missingKeyRows, duplicateKeys });
                 }
+                if (logicalLabel === CONFIG.tables.soulOverview) analyzeSoulOverviewRows(logicalLabel, dataRows, tableIssues, writebackRisks);
+                if (CONFIG.tables.rings.includes(logicalLabel)) analyzeRingKeyRows(logicalLabel, dataRows, tableIssues, writebackRisks);
             }
         }
         if (exportShapeIssues.length) {
@@ -3561,6 +3874,21 @@
         if (upsertKeyIssues.length) {
             issues.push(`检测到 upsert 唯一键异常：${upsertKeyIssues.slice(0, 8).join('；')}。affected 0 rows 后不会对缺失唯一键的表自动 insert。`);
         }
+        const soulOverviewIssues = tableIssues.filter(item => item.table === CONFIG.tables.soulOverview);
+        if (soulOverviewIssues.length) {
+            issues.push(`检测到武魂总览表结构/业务键异常：${soulOverviewIssues.slice(0, 8).map(item => item.message).join('；')}`);
+        }
+        const ringKeyIssues = tableIssues.filter(item => CONFIG.tables.rings.includes(item.table) && /^ring-key-/.test(item.code));
+        if (ringKeyIssues.length) {
+            issues.push(`检测到魂环表组合键异常：${ringKeyIssues.slice(0, 8).map(item => item.message).join('；')}`);
+        }
+        if (lastTransientWriteFailure) {
+            pushWritebackRisk(writebackRisks, lastTransientWriteFailure.tableName || '', 'sqlite-not-ready', 'SQLite 引擎未就绪，等待 loadFromChat 后退避重试', {
+                action: lastTransientWriteFailure.action,
+                error: lastTransientWriteFailure.error,
+                writeContext: lastTransientWriteFailure.writeContext,
+            });
+        }
         if (affectedZeroRisks.length) {
             issues.push(`检测到 SQLite affected 0 rows 风险：${affectedZeroRisks.slice(0, 8).join('；')}。请刷新/重建最新 TavernDB 后再重算。`);
         }
@@ -3568,6 +3896,10 @@
             ok: issues.length === 0,
             issues,
             missingTables: missing,
+            tableCount: recognizedTableCount,
+            tableIssues,
+            writebackRisks,
+            keyedTableStats,
             legacyNotNullColumns,
             physicalFieldTables: [...new Set(physicalFieldTables)],
             physicalFieldsWithoutDdl: [...new Set(physicalFieldsWithoutDdl)],
@@ -3578,6 +3910,35 @@
             exportShapeIssues,
             singletonIssues,
             singletonRowIdNotes,
+        };
+    }
+
+    function recommendedAuditAction(diagnosis, coreReady, fullReady) {
+        if (!diagnosis || diagnosis.issues.includes('无法读取数据库')) return '无法读取数据库：请确认 TavernDB/AutoCardUpdaterAPI 已加载，SQLite 模式需等待 loadFromChat 完成。';
+        if (diagnosis.writebackRisks.some(item => item.code === 'sqlite-not-ready')) return 'SQLite 引擎未就绪：等待自动退避重试，或手动调用 loadFromChat/重新打开聊天后再重算。';
+        if (!fullReady.ok || diagnosis.missingTables.length) return '模板缺表或同步不完整：重新注入最新 28 表 TavernDB 模板，刷新后再重算。';
+        if (!coreReady.ok) return '核心自动计算表缺失：先修复玩家状态、人物综合数值、人物运行状态、武魂总览表。';
+        if (diagnosis.singletonIssues.length) return '核心单例表结构异常：清洗为单行且 row_id=1 后再重算。';
+        if (diagnosis.rowIdIssues.length || diagnosis.affectedZeroRisks.length) return '存在 row_id/affected 0 rows 风险：刷新或清洗对应表的 row_id 后再重算。';
+        if (diagnosis.upsertKeyIssues.length || diagnosis.tableIssues.some(item => /business-key|unique-key|soul-|ring-key/.test(item.code))) return '业务唯一键异常：修复武魂名称、序号、魂环组合键等关键字段后再重算。';
+        if (diagnosis.physicalFieldsWithoutDdl.length || diagnosis.exportShapeIssues.length) return '导出结构或物理字段映射异常：刷新/重建最新 TavernDB，确保 DDL 注释可用。';
+        return '数据库结构未发现阻断项；若仍有 updateRow failed，优先检查 shujuku 写入返回和 rowIndex 失效 retry 日志。';
+    }
+
+    function auditDatabase(dbOverride = null) {
+        const db = dbOverride || exportDatabase(null);
+        const diagnosis = diagnoseDatabase(db);
+        const coreReady = db ? verifyDatabaseReady(db, CORE_RECALC_TABLES) : { ok: false, missing: CORE_RECALC_TABLES.slice(), message: '无法读取数据库' };
+        const fullReady = db ? verifyDatabaseReady(db, REQUIRED_TEMPLATE_TABLES) : { ok: false, missing: REQUIRED_TEMPLATE_TABLES.slice(), message: '无法读取数据库' };
+        return {
+            ok: diagnosis.ok && coreReady.ok && fullReady.ok,
+            tableCount: diagnosis.tableCount,
+            coreReady,
+            fullReady,
+            tableIssues: diagnosis.tableIssues,
+            writebackRisks: diagnosis.writebackRisks,
+            recommendedAction: recommendedAuditAction(diagnosis, coreReady, fullReady),
+            diagnosis,
         };
     }
 
@@ -5160,6 +5521,7 @@
 
         const readiness = verifyDatabaseReady(db);
         if (!readiness.ok) {
+            if (shouldDeferForSqliteStartup(db, readiness)) return sqliteStartupResult(options, readiness);
             console.warn(`[${SCRIPT_NAME}] ${readiness.message}`, readiness.missing);
             recalcToast(options, readiness.message, 'warning', 'severe');
             return { ok: false, reason: 'database template incomplete', missingTables: readiness.missing };
@@ -5179,6 +5541,7 @@
             return { ok: true, skipped: true, reason: 'awaiting initial seed', missingCoreInputs: initialMissingCoreInputs };
         }
 
+        resetTransientWriteFailure();
         isWriting = true;
         try {
             const singletonRepair = await repairSingletonTables(db, { quiet: true });
@@ -5188,6 +5551,7 @@
                 recalcToast(options, message, 'warning', 'severe');
                 return { ok: false, reason: 'unsafe singleton state', failedWrites: singletonRepair.failed };
             }
+            if (lastTransientWriteFailure) return transientSqliteResult(options, singletonRepair.failed);
             if (singletonRepair.changed) db = exportDatabase(db) || db;
 
             const statsRow = firstRow(db, CONFIG.tables.stats);
@@ -5256,6 +5620,15 @@
                 updates.push({
                     table: CONFIG.tables.soulOverview,
                     rowIndex: info.row.__rowIndex,
+                    keyData: {
+                        '序号': cell(info.row, '序号'),
+                        '武魂名称': info.name,
+                    },
+                    sourceRow: {
+                        row_id: rowIdText(info.row),
+                        '序号': cell(info.row, '序号'),
+                        '武魂名称': info.name,
+                    },
                     data: {
                         '先天等级_脚本': `${info.quality.level}级`,
                         '倍率与经验效率_脚本': `倍率:${info.quality.multiplier}x;经验效率:${info.quality.exp}`,
@@ -5276,6 +5649,15 @@
                     updates.push({
                         table: tableName,
                         rowIndex: row.__rowIndex,
+                        keyData: {
+                            '武魂名称': cell(row, '武魂名称'),
+                            '魂环序号': cell(row, '魂环序号'),
+                        },
+                        sourceRow: {
+                            row_id: rowIdText(row),
+                            '武魂名称': cell(row, '武魂名称'),
+                            '魂环序号': cell(row, '魂环序号'),
+                        },
                         data: {
                             '肉体加成_脚本': String(round(result.tri.body)),
                             '魂力加成_脚本': String(round(result.tri.soul)),
@@ -5358,16 +5740,21 @@
 
             const failedWrites = [...singletonRepair.failed];
             failedWrites.push(...await repairDuplicateBackpackRows(db, { quiet: true }));
+            if (lastTransientWriteFailure) return transientSqliteResult(options, failedWrites);
             failedWrites.push(...await updateRows(updates, { quiet: true }));
+            if (lastTransientWriteFailure) return transientSqliteResult(options, failedWrites);
             const statsResult = await upsertFirstRow(CONFIG.tables.stats, statsRow, statsUpdate, { quiet: true });
             if (apiWriteFailed(statsResult)) failedWrites.push(`${CONFIG.tables.stats}:upsert failed${writeFailureDetail(statsResult)}`);
+            if (lastTransientWriteFailure) return transientSqliteResult(options, failedWrites);
             const runtimeResult = await upsertFirstRow(runtimeTable, runtimeRow, runtimeUpdate, { quiet: true });
             if (apiWriteFailed(runtimeResult)) failedWrites.push(`${runtimeTable}:upsert failed${writeFailureDetail(runtimeResult)}`);
+            if (lastTransientWriteFailure) return transientSqliteResult(options, failedWrites);
             if (playerRow && playerRow.__rowIndex) {
                 const playerResult = await updateRowCompat(CONFIG.tables.player, playerRow.__rowIndex, {
                     '战力标尺定位_脚本': scale,
                 }, { quiet: true });
                 if (apiWriteFailed(playerResult)) failedWrites.push(`${CONFIG.tables.player}:updateRow failed${writeFailureDetail(playerResult)}`);
+                if (lastTransientWriteFailure) return transientSqliteResult(options, failedWrites);
             }
 
             if (CONFIG.refreshAfterWrite && typeof api.refreshDataAndWorldbook === 'function') {
@@ -5386,8 +5773,13 @@
             } else {
                 recalcToast(options, `重算完成：${soulRealm(level)} / ${realm} / ${scale}`, 'success');
             }
+            if (!failedWrites.length && !missingDerived.length) sqliteRetryDelayMs = SQLITE_NOT_READY_RETRY_MIN_MS;
             return { ok: failedWrites.length === 0 && missingDerived.length === 0, level, realm, scale, pointState, failedWrites, missingDerived };
         } catch (error) {
+            if (isSqliteNotReadyFailure(error)) {
+                transientWriteFailure('recalculate', '', error);
+                return transientSqliteResult(options, [`recalculate failed${writeFailureDetail(lastTransientWriteFailure)}`]);
+            }
             console.error(`[${SCRIPT_NAME}]`, error);
             recalcToast(options, `重算失败：${error.message || error}`, 'error', 'severe');
             return { ok: false, error };
@@ -5421,20 +5813,18 @@
         LEGACY_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
     }
 
-    function scheduleAutoRecalculate(reason = 'auto', delayMs = 250) {
-        if (!autoEnabled() || isWriting) return;
-        const compat = visualizerCompatState();
-        const nextDelay = compat.busy ? Math.max(delayMs, 1200) : delayMs;
+    function scheduleAutoRecalculate(reason = 'auto', delayMs = 250, options = {}) {
+        if (!autoEnabled() || (isWriting && !options.allowWhileWriting)) return;
         if (pendingAutoRecalc) clearTimeout(pendingAutoRecalc);
         pendingAutoRecalc = setTimeout(() => {
             pendingAutoRecalc = null;
-            if (!autoEnabled() || isWriting) return;
-            if (visualizerCompatState().busy) {
-                scheduleAutoRecalculate(reason, 1200);
+            if (!autoEnabled()) return;
+            if (isWriting) {
+                scheduleAutoRecalculate(reason, 500, { allowWhileWriting: true });
                 return;
             }
             recalculate({ force: true, reason });
-        }, nextDelay);
+        }, delayMs);
     }
 
     function registerTableUpdateListener() {
@@ -5458,7 +5848,7 @@
         timer = setInterval(() => recalculate({ force: true, reason: 'interval' }), CONFIG.autoIntervalMs);
         setAutoEnabled(true);
         if (showToast) toast('已开启自动重算。', 'success');
-        scheduleAutoRecalculate('start', 0);
+        scheduleAutoRecalculate('start', SQLITE_STARTUP_RECALC_DELAY_MS);
     }
 
     function stopAuto(showToast = true) {
@@ -5481,7 +5871,6 @@
     }
 
     function getStatus() {
-        const compat = visualizerCompatState();
         return {
             version: VERSION,
             autoEnabled: autoEnabled(),
@@ -5491,8 +5880,6 @@
             intervalMs: CONFIG.autoIntervalMs,
             hasApi: !!(api || getDatabaseApi()),
             lastInputHash,
-            visualizerDetected: compat.detected,
-            visualizerBusy: compat.busy,
         };
     }
 
@@ -5524,6 +5911,7 @@
         applyCreationPayload,
         diagnose,
         diagnoseDatabase,
+        auditDatabase,
         checkDatabaseReady: () => verifyDatabaseReady(exportDatabase(null)),
         checkCoreDatabaseReady: () => verifyDatabaseReady(exportDatabase(null), CORE_RECALC_TABLES),
         checkFullTemplateReady: () => verifyDatabaseReady(exportDatabase(null), REQUIRED_TEMPLATE_TABLES),
