@@ -8,7 +8,7 @@
   "use strict";
 
   const VERSION = "2.6";
-  const BUILD_ID = "agent-recall-companion@2.6+cdb8d16dc75c";
+  const BUILD_ID = "agent-recall-companion@2.6+0fbe7b3ac4ef";
   const REGISTRY_KEY = "__douluoAgentRecallCompanionInstance";
   const API_NAME = "DouLuoAgentRecallCompanion";
   const PANEL_ID = "douluo-agent-recall-companion-panel";
@@ -23,8 +23,6 @@
   const POSITION_KEY = `${STORAGE_PREFIX}panel-position`;
   const PROMPT_CACHE_PREFIX_KEY = `${STORAGE_PREFIX}prompt-cache-prefix`;
   const USER_SEND_TTL_MS = 15000;
-  const MESSAGE_BIND_WAIT_MS = 2300;
-  const MESSAGE_BIND_POLL_MS = 50;
   const WORLD_BOOK_OPERATION_TIMEOUT_MS = 15000;
   const RETRY_START_ACK_TIMEOUT_MS = 5000;
   const STOP_GENERATION_TIMEOUT_MS = 3000;
@@ -141,6 +139,10 @@
       recovered: 0,
       timeouts: 0,
       lastWaitMs: 0,
+      messageSentCount: 0,
+      deferredCount: 0,
+      finalizedCount: 0,
+      lastPhase: "idle",
     },
     plotCompletion: {
       status: "idle",
@@ -1013,27 +1015,6 @@
     return requestMatchesIntent(request, intent) ? request : null;
   }
 
-  async function waitForIntentRequest(intent, messageId) {
-    const immediate = resolveIntentRequest(intent, messageId);
-    if (immediate) return immediate;
-    const startedAt = Date.now();
-    const deadline = startedAt + MESSAGE_BIND_WAIT_MS;
-    state.messageBinding.waits++;
-    while (Date.now() < deadline) {
-      await new Promise(resolve => HOST.setTimeout(resolve, MESSAGE_BIND_POLL_MS));
-      if (state.disposed || intent.cancelled || state.foregroundIntent !== intent || intent.scopeKey !== chatScopeKey()) return null;
-      const request = resolveIntentRequest(intent, messageId);
-      if (request) {
-        state.messageBinding.recovered++;
-        state.messageBinding.lastWaitMs = Date.now() - startedAt;
-        return request;
-      }
-    }
-    state.messageBinding.timeouts++;
-    state.messageBinding.lastWaitMs = Date.now() - startedAt;
-    return null;
-  }
-
   function playerInputFromTaskHistory(message) {
     const tasks = message && message.qrf_plot_tasks;
     if (!tasks || typeof tasks !== "object" || Array.isArray(tasks)) return "";
@@ -1853,13 +1834,91 @@
     return run.generationBarrier;
   }
 
+  function finalizeForegroundBarrier(intent, request, source = "message_sent") {
+    if (!intent) return Promise.reject(new Error("foreground_intent_missing"));
+    if (intent.barrierPromise) return intent.barrierPromise;
+    const task = (async () => {
+      let boundRequest = request && requestMatchesIntent(request, intent)
+        ? request
+        : resolveIntentRequest(intent, request && request.index);
+      try {
+        const run = intent.run || await intent.preparePromise;
+        if (!run || intent.cancelled || state.foregroundIntent !== intent) throw new Error("worldbook_agent_run_unavailable_after_commands");
+        if (!boundRequest) {
+          setPlotCompletion("failed", { errorCode: "message_binding_missing" });
+          throw new Error("plot_completion_message_binding_missing");
+        }
+        intent.request = boundRequest;
+        intent.messageId = boundRequest.index;
+        intent.message = boundRequest.message;
+        bindRunToRequest(run, boundRequest.key);
+        run.sourceUserIndex = boundRequest.index;
+        run.sourceUserMessage = intent.rawInput;
+        markPlotPendingHash(boundRequest, intent.rawInput);
+        bindBodyPromptBarrier(boundRequest, run);
+        const recallResult = await run.promise;
+        await ensurePlotCompletion(boundRequest, intent.rawInput, run, recallResult);
+        await completeRunForBody(run, boundRequest.key);
+        state.messageBinding.finalizedCount++;
+        state.messageBinding.lastPhase = String(source || "message_sent");
+        clearForegroundWatchdog("body_barrier_armed", "body_ready");
+        return true;
+      } catch (error) {
+        if (state.foregroundIntent !== intent || intent.lifecycleEpoch !== state.lifecycleEpoch) {
+          record("info", "late_foreground_result_ignored", "已忽略过期前台整理结果。", { reason: lifecycleReasonCode(error) });
+          return false;
+        }
+        clearForegroundWatchdog(error, "failed");
+        const liveRequest = resolveUserRequest(intent.messageId);
+        boundRequest = requestMatchesIntent(liveRequest, intent) ? liveRequest
+          : requestMatchesIntent(boundRequest, intent) ? boundRequest : null;
+        if (boundRequest) setRetryToken(boundRequest, intent.run, intent.rawInput, error);
+        setForegroundLifecyclePhase(state.retryToken ? "retry_ready" : "failed", {
+          scopeKey: intent.scopeKey,
+          requestKey: intent.key,
+          messageId: boundRequest && boundRequest.index,
+          watchdogArmed: false,
+          reasonCode: lifecycleReasonCode(error),
+        });
+        if (intent.run) intent.run.cancelled = true;
+        intent.cancelled = true;
+        try { await restoreCommittedMask(intent.scopeKey); }
+        catch (restoreError) { record("error", "failed_run_mask_restore_failed", restoreError.message || restoreError); }
+        await stopGenerationForFailure(error, "worldbook_agent_barrier_failed");
+        state.activeRun = null;
+        state.preparingRun = null;
+        state.preparingRequestKey = "";
+        state.pendingRequestKey = "";
+        state.bodyGenerationActive = false;
+        unlockUserSend(state.retryToken ? "same_floor_retry_ready" : "worldbook_agent_failed");
+        updateSendLockDom();
+        renderPanel();
+        throw error;
+      }
+    })();
+    intent.barrierPromise = task;
+    task.catch(() => {});
+    return task;
+  }
+
   async function onMessageSent(messageId) {
     if (!state.enabled || state.disposed) return;
     const intent = state.foregroundIntent && !state.foregroundIntent.cancelled && state.foregroundIntent.scopeKey === chatScopeKey()
       ? state.foregroundIntent : null;
     if (!intent) return;
-    const request = resolveIntentRequest(intent, messageId);
-    if (!request) return;
+    state.messageBinding.messageSentCount++;
+    state.messageBinding.lastPhase = "message_sent_observed";
+    const numericMessageId = Number.isInteger(messageId) ? messageId
+      : /^\d+$/.test(String(messageId == null ? "" : messageId)) ? Number(messageId) : -1;
+    const eventRequest = numericMessageId >= 0 ? resolveUserRequest(numericMessageId) : null;
+    const request = resolveIntentRequest(intent, messageId)
+      || (eventRequest && eventRequest.index === numericMessageId ? eventRequest : null);
+    if (!request) {
+      intent.messageId = Number.isInteger(Number(messageId)) ? Number(messageId) : intent.messageId;
+      if (intent.afterCommandsObserved) await finalizeForegroundBarrier(intent, null, "message_sent_missing");
+      return;
+    }
+    intent.messageSentObserved = true;
     intent.request = request;
     intent.boundRequestKey = request.key;
     intent.messageId = request.index;
@@ -1871,7 +1930,7 @@
       reasonCode: "message_bound",
     });
     const originalInput = String(intent.rawInput || intent.run && intent.run.playerInput || playerInputFromMessage(request.message) || "").trim();
-    markPlotPendingHash(request, originalInput);
+    markPlotPendingHash(request, originalInput, true);
     if (intent.run) {
       bindRunToRequest(intent.run, request.key);
       intent.run.sourceUserIndex = request.index;
@@ -1888,6 +1947,13 @@
     } else bindBodyPromptBarrier(request, intent.run);
     lockUserSend("worldbook_agent_barrier", request.key);
     renderPanel();
+    if (intent.afterCommandsObserved) {
+      state.messageBinding.recovered++;
+      await finalizeForegroundBarrier(intent, request, "message_sent");
+    } else {
+      state.messageBinding.deferredCount++;
+      state.messageBinding.lastPhase = "waiting_after_commands";
+    }
   }
 
   async function onGenerationStarted(type, params, dryRun) {
@@ -1943,6 +2009,9 @@
       retry: !!retry,
       run: null,
       preparePromise: null,
+      afterCommandsObserved: false,
+      messageSentObserved: !!request,
+      barrierPromise: null,
     };
     state.foregroundIntent = intent;
     state.pendingRequestKey = requestKey;
@@ -1990,66 +2059,21 @@
     if (!isRegeneration(type) && !isStandardSend(type)) return;
     const intent = state.foregroundIntent;
     if (!intent || intent.cancelled || intent.scopeKey !== chatScopeKey()) return;
-    let request = resolveIntentRequest(intent, intent.messageId);
-    if (!request && !isRegeneration(type)) request = await waitForIntentRequest(intent, intent.messageId);
-    if (intent.cancelled || state.foregroundIntent !== intent || intent.scopeKey !== chatScopeKey()) return;
+    const regenerate = isRegeneration(type);
+    intent.afterCommandsObserved = true;
+    state.messageBinding.lastPhase = "after_commands_observed";
+    const request = regenerate || intent.messageSentObserved
+      ? resolveIntentRequest(intent, intent.messageId)
+      : null;
     if (request && !intent.request) {
       intent.request = request;
       intent.messageId = request.index;
       intent.message = request.message;
     }
-    try {
-      const run = intent.run || await intent.preparePromise;
-      if (!run || intent.cancelled || state.foregroundIntent !== intent) throw new Error("worldbook_agent_run_unavailable_after_commands");
-      if (!request) {
-        setPlotCompletion("failed", { errorCode: "message_binding_missing" });
-        throw new Error("plot_completion_message_binding_missing");
-      }
-      if (request) {
-        bindRunToRequest(run, request.key);
-        run.sourceUserIndex = request.index;
-        run.sourceUserMessage = intent.rawInput;
-        markPlotPendingHash(request, intent.rawInput);
-        bindBodyPromptBarrier(request, run);
-      } else {
-        state.bodyPromptBarrier.runId = run.id;
-        state.bodyPromptBarrier.updatedAt = Date.now();
-      }
-      const recallResult = await run.promise;
-      await ensurePlotCompletion(request, intent.rawInput, run, recallResult);
-      await completeRunForBody(run, request && request.key || intent.key);
-      clearForegroundWatchdog("body_barrier_armed", "body_ready");
-    } catch (error) {
-      if (state.foregroundIntent !== intent || intent.lifecycleEpoch !== state.lifecycleEpoch) {
-        record("info", "late_foreground_result_ignored", "已忽略过期前台整理结果。", { reason: lifecycleReasonCode(error) });
-        return;
-      }
-      clearForegroundWatchdog(error, "failed");
-      const liveRequest = resolveUserRequest(intent.messageId);
-      request = requestMatchesIntent(liveRequest, intent) ? liveRequest : null;
-      if (request) setRetryToken(request, intent.run, intent.rawInput, error);
-      setForegroundLifecyclePhase(state.retryToken ? "retry_ready" : "failed", {
-        scopeKey: intent.scopeKey,
-        requestKey: intent.key,
-        messageId: request && request.index,
-        watchdogArmed: false,
-        reasonCode: lifecycleReasonCode(error),
-      });
-      if (intent.run) intent.run.cancelled = true;
-      intent.cancelled = true;
-      try { await restoreCommittedMask(intent.scopeKey); }
-      catch (restoreError) { record("error", "failed_run_mask_restore_failed", restoreError.message || restoreError); }
-      await stopGenerationForFailure(error, "worldbook_agent_barrier_failed");
-      state.activeRun = null;
-      state.preparingRun = null;
-      state.preparingRequestKey = "";
-      state.pendingRequestKey = "";
-      state.bodyGenerationActive = false;
-      unlockUserSend(state.retryToken ? "same_floor_retry_ready" : "worldbook_agent_failed");
-      updateSendLockDom();
-      renderPanel();
-      throw error;
-    }
+    if (regenerate) return finalizeForegroundBarrier(intent, request, "regeneration_after_commands");
+    if (!request || !intent.messageSentObserved) return;
+    state.messageBinding.recovered++;
+    return finalizeForegroundBarrier(intent, request, "after_commands");
   }
 
   function onGenerationEnded(messageId) {
@@ -5196,7 +5220,7 @@
     on(types.MESSAGE_SENT, messageId => onMessageSent(messageId).catch(error => {
       record("error", "message_sent_greenlight_failed", error.message || error);
       throw error;
-    }));
+    }), { last: true });
     on(types.GENERATION_STARTED, (type, params, dryRun) => onGenerationStarted(type, params, dryRun).catch(error => {
       record("error", "generation_prepare_or_greenlight_failed", error.message || error);
       throw error;
