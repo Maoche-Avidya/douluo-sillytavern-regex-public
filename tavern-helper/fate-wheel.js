@@ -1,6 +1,6 @@
-// @name         [助手]斗罗命运转盘 @2.6
+// @name         [助手]斗罗命运转盘 @3.0
 // @module       tavern-helper/fate-wheel
-// @version      @2.6
+// @version      @3.0
 // @source       tavern-helper-scripts/fate-wheel/dist/latest.json
 "use strict";
 
@@ -2002,8 +2002,8 @@
   "use strict";
 
   const SCRIPT_NAME = "DouLuo Fate Wheel Helper";
-  const VERSION = "2.6";
-  const BUILD_ID = "fate-wheel@2.6+a9618e69542f";
+  const VERSION = "3.0";
+  const BUILD_ID = "fate-wheel@3.0+a9618e69542f";
   const ROOT_ID = "douluo-fate-wheel";
   const LAUNCHER_ID = `${ROOT_ID}-launcher`;
   const STYLE_ID = `${ROOT_ID}-style`;
