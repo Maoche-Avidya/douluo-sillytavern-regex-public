@@ -9,7 +9,7 @@
 
   const SCRIPT_NAME = "斗罗辅助卡片助手脚本";
   const VERSION = "3.0";
-  const BUILD_ID = "auxiliary-cards@3.0+48beb1cce211";
+  const BUILD_ID = "auxiliary-cards@3.0+d05f31ba3cba";
   const API_NAME = "DouLuoAuxiliaryCardsHelper";
   const STYLE_ID = "douluo-auxiliary-cards-helper-style";
   const CSS_TEXT = "[data-dlou-auxiliary-card-root=\"1\"],\n[data-dlou-auxiliary-card-root=\"1\"] * {\n  box-sizing: border-box;\n}\n\n[data-dlou-auxiliary-card-source=\"1\"][hidden] {\n  display: none !important;\n}\n\n.dlac-root {\n  width: 100%;\n  min-width: 0;\n  margin: 16px 0 20px;\n}\n\n.dlac-card {\n  --dlac-accent: #5ee7ff;\n  --dlac-accent-2: #8bb8c7;\n  --dlac-text: #edf6ff;\n  --dlac-muted: rgba(194, 210, 230, .76);\n  position: relative;\n  width: min(100%, 720px);\n  min-width: 0;\n  margin: 0 auto;\n  padding: 14px;\n  overflow: hidden;\n  color: var(--dlac-text);\n  border: 1px solid color-mix(in srgb, var(--dlac-accent) 44%, rgba(139, 184, 199, .26));\n  border-radius: 8px;\n  background:\n    linear-gradient(var(--dlac-accent), var(--dlac-accent)) left top / 34px 1px no-repeat,\n    linear-gradient(var(--dlac-accent), var(--dlac-accent)) left top / 1px 34px no-repeat,\n    linear-gradient(var(--dlac-accent-2), var(--dlac-accent-2)) right top / 34px 1px no-repeat,\n    linear-gradient(var(--dlac-accent-2), var(--dlac-accent-2)) right top / 1px 34px no-repeat,\n    linear-gradient(var(--dlac-accent), var(--dlac-accent)) left bottom / 34px 1px no-repeat,\n    linear-gradient(var(--dlac-accent), var(--dlac-accent)) left bottom / 1px 34px no-repeat,\n    linear-gradient(var(--dlac-accent-2), var(--dlac-accent-2)) right bottom / 34px 1px no-repeat,\n    linear-gradient(var(--dlac-accent-2), var(--dlac-accent-2)) right bottom / 1px 34px no-repeat,\n    linear-gradient(90deg, rgba(94, 231, 255, .10), transparent 44%),\n    linear-gradient(180deg, rgba(255, 255, 255, .055), transparent 38%),\n    linear-gradient(145deg, rgba(8, 22, 48, .92), rgba(4, 12, 28, .94));\n  box-shadow:\n    inset 0 1px 0 rgba(255, 255, 255, .10),\n    inset 0 -1px 0 rgba(255, 255, 255, .04),\n    inset 0 0 24px rgba(94, 231, 255, .07),\n    0 0 22px rgba(94, 231, 255, .10),\n    0 14px 34px rgba(0, 0, 0, .30);\n  backdrop-filter: blur(16px) saturate(132%);\n  -webkit-backdrop-filter: blur(16px) saturate(132%);\n  font: 14px/1.55 \"Noto Sans SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n}\n\n.dlac-card::before {\n  content: \"\";\n  position: absolute;\n  inset: 0 0 auto;\n  height: 2px;\n  background: linear-gradient(90deg, transparent, var(--dlac-accent), var(--dlac-accent-2), transparent);\n  opacity: .86;\n  pointer-events: none;\n}\n\n.dlac-card::after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  background:\n    linear-gradient(rgba(94, 231, 255, .13) 1px, transparent 1px),\n    linear-gradient(90deg, rgba(139, 184, 199, .10) 1px, transparent 1px);\n  background-size: 30px 30px;\n  opacity: .16;\n  pointer-events: none;\n}\n\n.dlac-head,\n.dlac-fields {\n  position: relative;\n  z-index: 1;\n}\n\n.dlac-head {\n  display: grid;\n  grid-template-columns: auto minmax(0, 1fr) auto;\n  align-items: center;\n  gap: 11px;\n  padding-bottom: 11px;\n  border-bottom: 1px solid rgba(94, 231, 255, .27);\n}\n\n.dlac-emblem {\n  width: 38px;\n  height: 38px;\n  display: grid;\n  place-items: center;\n  border: 1px solid rgba(94, 231, 255, .48);\n  border-radius: 50%;\n  color: var(--dlac-accent);\n  background:\n    radial-gradient(circle, rgba(94, 231, 255, .20), transparent 62%),\n    rgba(4, 16, 34, .64);\n  box-shadow: 0 0 18px rgba(94, 231, 255, .20), inset 0 0 10px rgba(94, 231, 255, .12);\n}\n\n.dlac-emblem-core {\n  font-size: 21px;\n  line-height: 1;\n  transform: rotate(45deg);\n}\n\n.dlac-title {\n  min-width: 0;\n  display: grid;\n  gap: 2px;\n  line-height: 1.25;\n}\n\n.dlac-kicker {\n  color: var(--dlac-muted);\n  font-size: 10px;\n  font-weight: 700;\n}\n\n.dlac-title strong {\n  color: var(--dlac-text);\n  font-size: 18px;\n  font-weight: 800;\n}\n\n.dlac-tags {\n  min-width: 0;\n  display: flex;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n  gap: 6px;\n}\n\n.dlac-tags span {\n  max-width: 160px;\n  min-height: 22px;\n  display: inline-flex;\n  align-items: center;\n  padding: 1px 8px;\n  overflow-wrap: anywhere;\n  color: rgba(158, 226, 239, .90);\n  border: 1px solid rgba(94, 231, 255, .24);\n  border-radius: 999px;\n  background: rgba(94, 231, 255, .06);\n  box-shadow: inset 0 0 10px rgba(94, 231, 255, .04);\n  font-size: 11px;\n  font-weight: 600;\n  line-height: 1.35;\n}\n\n.dlac-fields {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: 0 14px;\n  margin-top: 12px;\n}\n\n.dlac-field {\n  min-width: 0;\n  display: grid;\n  grid-template-columns: minmax(58px, .38fr) minmax(0, 1fr);\n  gap: 9px;\n  align-items: start;\n  padding: 8px 0;\n  border-top: 1px solid rgba(94, 231, 255, .15);\n  line-height: 1.55;\n}\n\n.dlac-field.is-free {\n  grid-column: 1 / -1;\n  grid-template-columns: 1fr;\n}\n\n.dlac-label {\n  color: rgba(133, 224, 241, .90);\n  font-size: 12px;\n  font-weight: 700;\n  line-height: 1.5;\n}\n\n.dlac-value,\n.dlac-free-value {\n  min-width: 0;\n  overflow-wrap: anywhere;\n  white-space: pre-wrap;\n  color: var(--dlac-text);\n  font-size: 14px;\n}\n\n.dlac-field.is-important .dlac-value {\n  color: #9eeeff;\n  font-weight: 800;\n  text-shadow: 0 0 12px rgba(94, 231, 255, .24);\n}\n\n.dlac-card[data-outcome=\"success\"] {\n  --dlac-accent-2: #6ee7b7;\n}\n\n.dlac-card[data-outcome=\"failure\"] {\n  --dlac-accent-2: #ff7c91;\n}\n\n@media (max-width: 620px) {\n  .dlac-card {\n    padding: 12px;\n  }\n\n  .dlac-head {\n    grid-template-columns: auto minmax(0, 1fr);\n  }\n\n  .dlac-tags {\n    grid-column: 1 / -1;\n    justify-content: flex-start;\n  }\n\n  .dlac-fields {\n    grid-template-columns: 1fr;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dlac-root *,\n  .dlac-root *::before,\n  .dlac-root *::after {\n    scroll-behavior: auto !important;\n    transition: none !important;\n    animation: none !important;\n  }\n}\n";
@@ -20,16 +20,7 @@
   const CONTENT_SELECTOR = ".mes_text, [data-message-content]";
   const IMPORTANT_LABELS = new Set(["结果", "状态", "目标剩余", "计算", "骰运", "等级变化", "属性变化"]);
   const CHIP_LABELS = ["角色", "目标", "类型", "标签"];
-  const STARTUP_SCAN_DELAYS = [0, 80, 240, 750, 1600];
-  const LIFECYCLE_SCAN_POLICIES = Object.freeze({
-    CHAT_CHANGED: [0, 240, 1600],
-    MESSAGE_UPDATED: [120],
-    MESSAGE_RECEIVED: [80],
-    MESSAGE_EDITED: [120],
-    GENERATION_ENDED: [0, 240],
-    DEFAULT: [80],
-  });
-  const MESSAGE_LIFECYCLE_MAX_WAIT_MS = 500;
+  const SCAN_DELAYS = [0, 80, 240, 750, 1600];
 
   const state = {
     scanRuns: 0,
@@ -39,40 +30,10 @@
     subscriptions: [],
     scanTimer: 0,
     pollTimer: 0,
-    dirtyRoots: new Set(),
-    fullScanRequested: false,
-    chatLifecycleTimers: new Set(),
-    messageLifecycleTimers: new Set(),
-    messageLifecycleBurstAt: 0,
-    startupTimers: new Set(),
-    performance: {
-      fullScanRuns: 0,
-      scopedScanRuns: 0,
-      scopesVisited: 0,
-      observerCallbackCount: 0,
-      observerMutationCount: 0,
-      lifecycleTimersScheduled: 0,
-      lifecycleTimersCancelled: 0,
-      observerRetargetCount: 0,
-      totalScanDurationMs: 0,
-      maxScanDurationMs: 0,
-      lastScanDurationMs: 0,
-    },
     destroyed: false,
     lastScanAt: "",
     lastError: "",
   };
-
-  function performanceNow() {
-    try {
-      if (window.performance && typeof window.performance.now === "function") return window.performance.now();
-    } catch (_) {}
-    return Date.now();
-  }
-
-  function performanceSnapshot() {
-    return { ...state.performance };
-  }
 
   function accessibleWindows() {
     const output = [];
@@ -363,14 +324,10 @@
 
   function scanExisting(root) {
     if (state.destroyed) return { scanned: 0, mounted: 0, updated: 0, active: activeCount() };
-    const scanStartedAt = performanceNow();
     state.scanRuns += 1;
-    if (root) state.performance.scopedScanRuns += 1;
-    else state.performance.fullScanRuns += 1;
     let mounted = 0;
     let updated = 0;
     const scopes = root ? [root] : accessibleWindows().map((host) => host.document);
-    state.performance.scopesVisited += scopes.length;
     Array.from(new Set(scopes)).forEach((scope) => {
       try {
         const result = scanScope(scope);
@@ -381,10 +338,6 @@
       }
     });
     state.lastScanAt = new Date().toISOString();
-    const scanDurationMs = Math.max(0, performanceNow() - scanStartedAt);
-    state.performance.lastScanDurationMs = scanDurationMs;
-    state.performance.totalScanDurationMs += scanDurationMs;
-    state.performance.maxScanDurationMs = Math.max(state.performance.maxScanDurationMs, scanDurationMs);
     return { scanned: scopes.length, mounted, updated, active: activeCount() };
   }
 
@@ -399,26 +352,10 @@
   }
 
   function scheduleScan(root) {
-    if (state.destroyed) return;
-    if (root) state.dirtyRoots.add(root);
-    else state.fullScanRequested = true;
-    if (state.scanTimer) return;
+    if (state.destroyed || state.scanTimer) return;
     state.scanTimer = window.setTimeout(() => {
       state.scanTimer = 0;
-      if (state.destroyed) return;
-      if (state.fullScanRequested) {
-        state.fullScanRequested = false;
-        state.dirtyRoots.clear();
-        scanExisting();
-        return;
-      }
-      const roots = Array.from(state.dirtyRoots);
-      state.dirtyRoots.clear();
-      if (roots.some((entry) => !entry || !entry.isConnected)) {
-        scanExisting();
-        return;
-      }
-      roots.forEach((entry) => scanExisting(entry));
+      scanExisting(root && root.isConnected ? root : null);
     }, 35);
   }
 
@@ -433,70 +370,15 @@
       const doc = host.document;
       injectStyle(doc);
       const target = doc.querySelector("#chat") || doc.body || doc.documentElement;
-      if (!target) return;
-      const existing = state.observerEntries.find((entry) => entry.document === doc);
-      if (existing && existing.target === target) return;
-      if (existing) {
-        try { existing.observer.disconnect(); } catch (_) {}
-        state.observerEntries.splice(state.observerEntries.indexOf(existing), 1);
-        state.performance.observerRetargetCount += 1;
-      }
+      if (!target || state.observerEntries.some((entry) => entry.document === doc && entry.target === target)) return;
       const Observer = host.MutationObserver || window.MutationObserver;
       if (typeof Observer !== "function") return;
       const observer = new Observer((mutations) => {
-        state.performance.observerCallbackCount += 1;
-        state.performance.observerMutationCount += mutations.length;
-        const mappedScopes = mutations.map((item) => mutationScope(item));
-        const scopes = new Set(mappedScopes.filter(Boolean));
-        if (mappedScopes.some((scope) => !scope)) scheduleScan(null);
-        else scopes.forEach((scope) => scheduleScan(scope));
+        const mutation = mutations.find((item) => mutationScope(item));
+        scheduleScan(mutation ? mutationScope(mutation) : null);
       });
       observer.observe(target, { childList: true, subtree: true, characterData: true });
       state.observerEntries.push({ document: doc, target, observer });
-    });
-  }
-
-  function clearLifecycleTimerLane(timers) {
-    timers.forEach((timer) => {
-      window.clearTimeout(timer);
-      state.performance.lifecycleTimersCancelled += 1;
-    });
-    timers.clear();
-  }
-
-  function clearLifecycleTimers() {
-    clearLifecycleTimerLane(state.chatLifecycleTimers);
-    clearLifecycleTimerLane(state.messageLifecycleTimers);
-    state.messageLifecycleBurstAt = 0;
-  }
-
-  function scheduleLifecycleScans(key) {
-    const isChatChange = key === "CHAT_CHANGED";
-    const timers = isChatChange ? state.chatLifecycleTimers : state.messageLifecycleTimers;
-    if (isChatChange) {
-      clearLifecycleTimerLane(state.chatLifecycleTimers);
-      clearLifecycleTimerLane(state.messageLifecycleTimers);
-      state.messageLifecycleBurstAt = 0;
-    } else {
-      clearLifecycleTimerLane(state.messageLifecycleTimers);
-      if (!state.messageLifecycleBurstAt) state.messageLifecycleBurstAt = Date.now();
-    }
-    const remainingWait = isChatChange
-      ? Number.POSITIVE_INFINITY
-      : Math.max(0, MESSAGE_LIFECYCLE_MAX_WAIT_MS - (Date.now() - state.messageLifecycleBurstAt));
-    const policy = LIFECYCLE_SCAN_POLICIES[key] || LIFECYCLE_SCAN_POLICIES.DEFAULT;
-    const delays = Array.from(new Set(policy.map((delay) => Math.min(delay, remainingWait))));
-    delays.forEach((delay) => {
-      let timer = 0;
-      timer = window.setTimeout(() => {
-        timers.delete(timer);
-        if (!isChatChange && !timers.size) state.messageLifecycleBurstAt = 0;
-        if (state.destroyed) return;
-        startObservers();
-        scheduleScan(null);
-      }, delay);
-      timers.add(timer);
-      state.performance.lifecycleTimersScheduled += 1;
     });
   }
 
@@ -509,7 +391,10 @@
       ["CHAT_CHANGED", "MESSAGE_UPDATED", "MESSAGE_RECEIVED", "MESSAGE_EDITED", "GENERATION_ENDED"].forEach((key) => {
         const eventName = eventTypes[key] || key;
         if (state.subscriptions.some((item) => item.source === source && item.eventName === eventName)) return;
-        const listener = () => scheduleLifecycleScans(key);
+        const listener = () => SCAN_DELAYS.forEach((delay) => window.setTimeout(() => {
+          startObservers();
+          scanExisting();
+        }, delay));
         try {
           source.on(eventName, listener);
           state.subscriptions.push({ source, eventName, listener });
@@ -566,11 +451,8 @@
       updatedTotal: state.updatedTotal,
       observerCount: state.observerEntries.length,
       subscriptionCount: state.subscriptions.length,
-      lifecycleTimerCount: state.chatLifecycleTimers.size + state.messageLifecycleTimers.size,
-      startupTimerCount: state.startupTimers.size,
       lastScanAt: state.lastScanAt,
       lastError: state.lastError,
-      performance: performanceSnapshot(),
       destroyed: state.destroyed,
     };
   }
@@ -580,13 +462,8 @@
     state.destroyed = true;
     if (state.scanTimer) window.clearTimeout(state.scanTimer);
     if (state.pollTimer) window.clearTimeout(state.pollTimer);
-    clearLifecycleTimers();
-    state.startupTimers.forEach((timer) => window.clearTimeout(timer));
-    state.startupTimers.clear();
     state.scanTimer = 0;
     state.pollTimer = 0;
-    state.dirtyRoots.clear();
-    state.fullScanRequested = false;
     state.observerEntries.forEach((entry) => entry.observer.disconnect());
     state.observerEntries.length = 0;
     state.subscriptions.forEach((item) => {
@@ -613,7 +490,7 @@
     } catch (_) {}
   });
 
-  const api = Object.freeze({ version: VERSION, buildId: BUILD_ID, scanExisting, restoreAll, metrics: performanceSnapshot, status, destroy });
+  const api = Object.freeze({ version: VERSION, buildId: BUILD_ID, scanExisting, restoreAll, status, destroy });
   accessibleWindows().forEach((host) => {
     try { host[API_NAME] = api; } catch (_) {}
   });
@@ -621,14 +498,7 @@
   function bootstrap() {
     startObservers();
     subscribeLifecycle();
-    STARTUP_SCAN_DELAYS.forEach((delay) => {
-      let timer = 0;
-      timer = window.setTimeout(() => {
-        state.startupTimers.delete(timer);
-        if (!state.destroyed) scanExisting();
-      }, delay);
-      state.startupTimers.add(timer);
-    });
+    SCAN_DELAYS.forEach((delay) => window.setTimeout(() => scanExisting(), delay));
     startPolling();
     try { (window.console || console).info("[DouLuo Auxiliary Cards] loaded", status()); } catch (_) {}
   }
