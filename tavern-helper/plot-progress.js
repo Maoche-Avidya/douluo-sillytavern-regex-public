@@ -9,7 +9,7 @@
 
   const SCRIPT_NAME = "斗罗剧情推进挂载助手脚本";
   const VERSION = "3.0";
-  const BUILD_ID = "plot-progress@3.0+efe3d416116e";
+  const BUILD_ID = "plot-progress@3.0+0acb2c263808";
   const API_NAME = "DouLuoPlotProgressHelper";
   const STYLE_ID = "douluo-plot-progress-helper-style";
   const STORAGE_KEY = "douluo:plot-progress:panel-state:v1";
@@ -110,7 +110,16 @@
     '[data-dlou-main-text-host="1"]',
     "[data-main-text-root]",
   ].join(", ");
-  const SCAN_DELAYS = [0, 80, 240, 750, 1600];
+  const STARTUP_SCAN_DELAYS = [0, 80, 240, 750, 1600];
+  const LIFECYCLE_SCAN_POLICIES = Object.freeze({
+    CHAT_CHANGED: [0, 240, 1600],
+    MESSAGE_UPDATED: [120],
+    MESSAGE_RECEIVED: [80],
+    MESSAGE_EDITED: [120],
+    GENERATION_ENDED: [0, 240],
+    DEFAULT: [80],
+  });
+  const MESSAGE_LIFECYCLE_MAX_WAIT_MS = 500;
   const FALLBACK_POLL_MS = 5000;
   const MEMORY_LONG_RETRY_MS = 15000;
   const COMPANION_LIFECYCLE_EVENT = "douluo-agent-recall:lifecycle";
@@ -128,6 +137,27 @@
     dirtyRoots: new Set(),
     scanTimer: 0,
     pollTimer: 0,
+    chatLifecycleTimers: new Set(),
+    messageLifecycleTimers: new Set(),
+    messageLifecycleBurstAt: 0,
+    startupTimers: new Set(),
+    lastFallbackFingerprint: "",
+    performance: {
+      fullScanRuns: 0,
+      scopedScanRuns: 0,
+      candidatesVisited: 0,
+      observerCallbackCount: 0,
+      observerMutationCount: 0,
+      ignoredMutationCount: 0,
+      lifecycleTimersScheduled: 0,
+      lifecycleTimersCancelled: 0,
+      observerRetargetCount: 0,
+      fallbackFingerprintChecks: 0,
+      fallbackScans: 0,
+      totalScanDurationMs: 0,
+      maxScanDurationMs: 0,
+      lastScanDurationMs: 0,
+    },
     destroyed: false,
     lastError: "",
     lastRawPreview: "",
@@ -151,6 +181,17 @@
     memoryCache: new Map(),
     memoryHydrations: new Map(),
   };
+
+  function performanceNow() {
+    try {
+      if (window.performance && typeof window.performance.now === "function") return window.performance.now();
+    } catch (_) {}
+    return Date.now();
+  }
+
+  function performanceSnapshot() {
+    return { ...state.performance };
+  }
 
     function legacyTaskContract() {
     return [
@@ -1306,8 +1347,12 @@
     if (state.destroyed) {
       return { scanned: 0, rendered: 0, mounted: state.mounted, pending: state.pending, updated: state.updated };
     }
+    const scanStartedAt = performanceNow();
     state.scanRuns += 1;
+    if (root) state.performance.scopedScanRuns += 1;
+    else state.performance.fullScanRuns += 1;
     const candidates = collectCandidates(root || null);
+    state.performance.candidatesVisited += candidates.length;
     const results = await Promise.all(candidates.map((node) => processCandidate(node).catch((error) => {
       state.lastError = error && error.message ? error.message : String(error);
       return { rendered: false, user: false, reason: "scan-error" };
@@ -1327,6 +1372,10 @@
       state.lastTaskSources = diagnostic.taskSources || {};
       if (diagnostic.rawPreview) state.lastRawPreview = diagnostic.rawPreview;
     }
+    const scanDurationMs = Math.max(0, performanceNow() - scanStartedAt);
+    state.performance.lastScanDurationMs = scanDurationMs;
+    state.performance.totalScanDurationMs += scanDurationMs;
+    state.performance.maxScanDurationMs = Math.max(state.performance.maxScanDurationMs, scanDurationMs);
     return {
       scanned: candidates.length,
       rendered: results.filter((result) => result && result.rendered).length,
@@ -1375,17 +1424,52 @@
     return !!(target && target.closest && target.closest('[data-dlou-plot-progress-root="1"]'));
   }
 
+  function mutationAffectsPlot(mutation) {
+    if (!mutation || mutationInsideMountedPanel(mutation)) return false;
+    if (mutation.type !== "attributes") return true;
+    if ([
+      "data-raw-message",
+      "data-message",
+      "data-message-role",
+      "is_user",
+      "contenteditable",
+      "data-editing",
+      "data-message-editing",
+    ].includes(mutation.attributeName)) return true;
+    const rawTarget = mutation.target;
+    const target = rawTarget && rawTarget.nodeType === 1 ? rawTarget : rawTarget && rawTarget.parentElement;
+    const message = messageNodeFor(target);
+    if (!target || !message) return false;
+    if (target === message) return true;
+    const editSelector = `${EDIT_TEXTAREA_SELECTOR}, ${EXPLICIT_EDIT_SELECTOR}`;
+    if (target.matches && target.matches(editSelector)) return true;
+    if (target.closest && target.closest(editSelector)) return true;
+    return !!(target.querySelector && target.querySelector(editSelector));
+  }
+
   function startObservers() {
     accessibleWindows().forEach((host) => {
       const doc = host.document;
       injectStyle(doc);
       const target = doc.body || doc.documentElement;
-      if (!target || state.observerEntries.some((entry) => entry.document === doc && entry.target === target)) return;
+      if (!target) return;
+      const existing = state.observerEntries.find((entry) => entry.document === doc);
+      if (existing && existing.target === target) return;
+      if (existing) {
+        try { existing.observer.disconnect(); } catch (_) {}
+        state.observerEntries.splice(state.observerEntries.indexOf(existing), 1);
+        state.performance.observerRetargetCount += 1;
+      }
       const Observer = host.MutationObserver || window.MutationObserver;
       if (typeof Observer !== "function") return;
       const observer = new Observer((mutations) => {
+        state.performance.observerCallbackCount += 1;
+        state.performance.observerMutationCount += mutations.length;
         mutations.forEach((mutation) => {
-          if (mutationInsideMountedPanel(mutation)) return;
+          if (!mutationAffectsPlot(mutation)) {
+            state.performance.ignoredMutationCount += 1;
+            return;
+          }
           const target = mutation.target && mutation.target.nodeType === 3 ? mutation.target.parentElement : mutation.target;
           const targetMessage = messageNodeFor(target);
           if (targetMessage) {
@@ -1412,6 +1496,51 @@
       });
       state.observerEntries.push({ document: doc, target, observer });
       scheduleScan(doc);
+    });
+  }
+
+  function clearLifecycleTimerLane(timers) {
+    timers.forEach((timer) => {
+      window.clearTimeout(timer);
+      state.performance.lifecycleTimersCancelled += 1;
+    });
+    timers.clear();
+  }
+
+  function clearLifecycleTimers() {
+    clearLifecycleTimerLane(state.chatLifecycleTimers);
+    clearLifecycleTimerLane(state.messageLifecycleTimers);
+    state.messageLifecycleBurstAt = 0;
+  }
+
+  function scheduleLifecycleScans(key) {
+    const isChatChange = key === "CHAT_CHANGED";
+    const timers = isChatChange ? state.chatLifecycleTimers : state.messageLifecycleTimers;
+    if (isChatChange) {
+      clearLifecycleTimerLane(state.chatLifecycleTimers);
+      clearLifecycleTimerLane(state.messageLifecycleTimers);
+      state.messageLifecycleBurstAt = 0;
+    } else {
+      clearLifecycleTimerLane(state.messageLifecycleTimers);
+      if (!state.messageLifecycleBurstAt) state.messageLifecycleBurstAt = Date.now();
+    }
+    const remainingWait = isChatChange
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, MESSAGE_LIFECYCLE_MAX_WAIT_MS - (Date.now() - state.messageLifecycleBurstAt));
+    const policy = LIFECYCLE_SCAN_POLICIES[key] || LIFECYCLE_SCAN_POLICIES.DEFAULT;
+    const delays = Array.from(new Set(policy.map((delay) => Math.min(delay, remainingWait))));
+    delays.forEach((delay, index) => {
+      let timer = 0;
+      timer = window.setTimeout(() => {
+        timers.delete(timer);
+        if (!isChatChange && !timers.size) state.messageLifecycleBurstAt = 0;
+        if (state.destroyed) return;
+        startObservers();
+        if (key === "CHAT_CHANGED" && index === 0) scanExisting();
+        else scheduleCurrentFloorScan();
+      }, delay);
+      timers.add(timer);
+      state.performance.lifecycleTimersScheduled += 1;
     });
   }
 
@@ -1465,11 +1594,7 @@
         if (state.subscriptions.some((item) => item.source === source && item.eventName === eventName)) return;
         const listener = () => {
           if (key === "CHAT_CHANGED") clearMemoryState();
-          SCAN_DELAYS.forEach((delay) => window.setTimeout(() => {
-            startObservers();
-            if (key === "CHAT_CHANGED" && delay === SCAN_DELAYS[0]) scanExisting();
-            else scheduleCurrentFloorScan();
-          }, delay));
+          scheduleLifecycleScans(key);
         };
         try {
           source.on(eventName, listener);
@@ -1487,6 +1612,19 @@
     state.lastMemory = { references: 0, resolved: 0, missing: 0, reads: state.lastMemory.reads, status: "idle" };
   }
 
+  function currentFloorContextFingerprint() {
+    const context = currentContext();
+    const chat = context && Array.isArray(context.chat) ? context.chat : null;
+    return currentUserMessageNodes().map((message) => {
+      const messageId = messageIdFor(message);
+      const record = chat && messageId !== "" ? exactMessageRecord(chat, messageId, false) : null;
+      const taskPayload = [...CONTRACT_TASKS, ...LEGACY_CONTRACT_TASKS]
+        .map((task) => taskText(record, task.id))
+        .join("\u001e");
+      return `${messageId}:${record ? 1 : 0}:${hashText(`${qrfPlotFromRecord(record)}\u001f${taskPayload}`)}`;
+    }).join("|");
+  }
+
   function startPolling() {
     if (state.pollTimer || state.destroyed) return;
     const tick = () => {
@@ -1495,10 +1633,19 @@
       startObservers();
       subscribeLifecycle();
       const hostSubscriptions = state.subscriptions.filter((item) => !item.dom).length;
-      if (!state.observerEntries.length && !hostSubscriptions) scanExisting();
+      if (!hostSubscriptions) {
+        state.performance.fallbackFingerprintChecks += 1;
+        const fingerprint = currentFloorContextFingerprint();
+        if (fingerprint !== state.lastFallbackFingerprint) {
+          state.lastFallbackFingerprint = fingerprint;
+          state.performance.fallbackScans += 1;
+          if (!scheduleCurrentFloorScan() && !state.observerEntries.length) scanExisting();
+        }
+      }
       state.pollTimer = window.setTimeout(tick, hostSubscriptions ? FALLBACK_POLL_MS : 750);
     };
     const hostSubscriptions = state.subscriptions.filter((item) => !item.dom).length;
+    if (!hostSubscriptions) state.lastFallbackFingerprint = currentFloorContextFingerprint();
     state.pollTimer = window.setTimeout(tick, hostSubscriptions ? FALLBACK_POLL_MS : 750);
   }
 
@@ -1554,6 +1701,8 @@
       scanRuns: state.scanRuns,
       observerCount: state.observerEntries.length,
       lifecycleSubscriptionCount: state.subscriptions.length,
+      lifecycleTimerCount: state.chatLifecycleTimers.size + state.messageLifecycleTimers.size,
+      startupTimerCount: state.startupTimers.size,
       lastError: state.lastError,
       lastRawPreview: state.lastRawPreview,
       lastMessageId: state.lastMessageId,
@@ -1580,6 +1729,7 @@
       memory: { ...state.lastMemory },
       storageKey: STORAGE_KEY,
       fields: ALL_FIELDS.slice(),
+      performance: performanceSnapshot(),
       runtimeEvidence: currentFloorEvidence(),
     };
   }
@@ -1594,6 +1744,9 @@
     state.destroyed = true;
     if (state.scanTimer) window.clearTimeout(state.scanTimer);
     if (state.pollTimer) window.clearTimeout(state.pollTimer);
+    clearLifecycleTimers();
+    state.startupTimers.forEach((timer) => window.clearTimeout(timer));
+    state.startupTimers.clear();
     state.dirtyRoots.clear();
     clearMemoryState();
     state.observerEntries.forEach((entry) => { try { entry.observer.disconnect(); } catch (_) {} });
@@ -1604,6 +1757,10 @@
         else if (item.source && typeof item.source.removeListener === "function") item.source.removeListener(item.eventName, item.listener);
       } catch (_) {}
     });
+    state.scanTimer = 0;
+    state.pollTimer = 0;
+    state.observerEntries.length = 0;
+    state.subscriptions.length = 0;
     let restored = 0;
     state.originals.forEach((snapshot, content) => {
       if (!content || !content.isConnected) return;
@@ -1627,7 +1784,7 @@
     return { restored, restoredMessages };
   }
 
-  const api = { version: VERSION, buildId: BUILD_ID, scanExisting, status, diagnose, destroy };
+  const api = { version: VERSION, buildId: BUILD_ID, scanExisting, metrics: performanceSnapshot, status, diagnose, destroy };
   const host = rootWindow();
   try {
     const previous = host[API_NAME];
@@ -1639,8 +1796,16 @@
     startObservers();
     subscribeLifecycle();
     try { (rootWindow().console || console).info("[DouLuo Plot Progress] loaded", status()); } catch (_) {}
-    window.setTimeout(() => scanExisting(), SCAN_DELAYS[0] || 0);
-    SCAN_DELAYS.slice(1).forEach((delay) => window.setTimeout(() => scheduleCurrentFloorScan(), delay));
+    STARTUP_SCAN_DELAYS.forEach((delay, index) => {
+      let timer = 0;
+      timer = window.setTimeout(() => {
+        state.startupTimers.delete(timer);
+        if (state.destroyed) return;
+        if (index === 0) scanExisting();
+        else scheduleCurrentFloorScan();
+      }, delay);
+      state.startupTimers.add(timer);
+    });
     startPolling();
   }
 
