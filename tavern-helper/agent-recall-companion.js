@@ -8,7 +8,7 @@
   "use strict";
 
   const VERSION = "3.0";
-  const BUILD_ID = "agent-recall-companion@3.0+cd00a3f9ad2a";
+  const BUILD_ID = "agent-recall-companion@3.0+37a154d2b550";
   const REGISTRY_KEY = "__douluoAgentRecallCompanionInstance";
   const API_NAME = "DouLuoAgentRecallCompanion";
   const PANEL_ID = "douluo-agent-recall-companion-panel";
@@ -425,7 +425,7 @@
   }
 
   async function refreshApiPresets() {
-    // spv8.8.2 intentionally hides API preset enumeration. The companion only
+    // spv8.9.2 intentionally hides API preset enumeration. The companion only
     // uses the public callAI proxy and never treats an empty private list as a
     // missing preset.
     state.apiPresets = [];
@@ -652,7 +652,7 @@
       state.databaseOwnership.lastError = "native_refresh_api_missing";
       throw new Error("database_ownership_pollution_native_refresh_missing");
     }
-    record("warn", "database_ownership_pollution_removed", `已从伴侣缓存中剔除 ${removed} 个 TavernDB 条目引用，交由 spv8.8.2 原生重建。`, { removed });
+    record("warn", "database_ownership_pollution_removed", `已从伴侣缓存中剔除 ${removed} 个 TavernDB 条目引用，交由 spv8.9.2 原生重建。`, { removed });
     const refreshed = await api.refreshDataAndWorldbook();
     if (refreshed === false || refreshed && (refreshed.success === false || refreshed.ok === false)) {
       state.databaseOwnership.lastError = refreshed && (refreshed.error || refreshed.message) || "native_refresh_failed";
@@ -4166,7 +4166,7 @@
         sampledAt,
         lastError: "exportTableAsJson_missing",
       };
-      record("warn", "database_evidence_unavailable", "spv8.8.2 公开接口未提供 exportTableAsJson；分类器本轮不附带数据库路由事实。");
+      record("warn", "database_evidence_unavailable", "spv8.9.2 公开接口未提供 exportTableAsJson；分类器本轮不附带数据库路由事实。");
       return Core.buildDatabaseRouteFactsSnapshot({});
     }
     try {
@@ -5172,7 +5172,7 @@
       panel = DOC.createElement("section");
       panel.id = PANEL_ID;
       panel.dataset.open = "false";
-      panel.innerHTML = `<div class="dlarc-head"><button type="button" class="dlarc-toggle" data-action="toggle" aria-expanded="false"><strong>斗罗 Agent 伴侣</strong><span class="dlarc-pill" data-field="state">—</span></button><button type="button" class="dlarc-drag-handle" data-dlarc-drag-handle="1" aria-label="拖动伴侣面板" title="拖动面板">⠿</button></div><div class="dlarc-body"><section class="dlarc-section"><strong>运行状态</strong><dl><dt>数据库</dt><dd data-field="database">—</dd><dt>世界书</dt><dd data-field="books">—</dd><dt>时代 / 章节</dt><dd data-field="era">—</dd><dt>现场人物</dt><dd data-field="roster">—</dd><dt>可能介入</dt><dd data-field="entrants">—</dd><dt>跨时代桥接</dt><dd data-field="cross-era">—</dd><dt>七类关系</dt><dd data-field="relations">—</dd><dt>关系门槛</dt><dd data-field="evidence">—</dd><dt>蓝灯</dt><dd data-field="selection">—</dd><dt>蓝灯事务</dt><dd data-field="greenlight-guard">—</dd><dt>TK</dt><dd data-field="tk">—</dd><dt>召回阶段</dt><dd data-field="phase">—</dd><dt>分类健康</dt><dd data-field="classifier-health">—</dd><dt>剧情完成</dt><dd data-field="plot-completion">—</dd><dt>缓存前缀</dt><dd data-field="prompt-cache">—</dd><dt>最近诊断</dt><dd data-field="diagnostic">—</dd></dl></section><section class="dlarc-section"><strong>章节控制</strong><div class="dlarc-chapter-controls"><select data-manual-chapter-select aria-label="手动选择当前章节"></select><button type="button" data-action="apply-chapter">切换章节</button><button type="button" data-action="clear-chapter">恢复自动</button></div><div class="dlarc-note" data-field="manual-chapter">等待当前时代章节目录</div></section><details class="dlarc-section" open><summary>数据库 API</summary><div class="dlarc-presets"><div class="dlarc-api-route-row" data-api-route-row="catalog"><label for="dlarc-catalog-route">目录</label><div class="dlarc-api-route-controls"><select id="dlarc-catalog-route" data-api-route="catalog"></select><input type="text" data-api-preset-name="catalog" aria-label="目录数据库预设名称" placeholder="输入数据库中的精确预设名称" hidden disabled></div></div><div class="dlarc-api-route-row" data-api-route-row="classifier"><label for="dlarc-classifier-route">分类</label><div class="dlarc-api-route-controls"><select id="dlarc-classifier-route" data-api-route="classifier"></select><input type="text" data-api-preset-name="classifier" aria-label="分类数据库预设名称" placeholder="输入数据库中的精确预设名称" hidden disabled></div></div><div class="dlarc-api-route-row" data-api-route-row="skill"><label for="dlarc-skill-route">Skill</label><div class="dlarc-api-route-controls"><select id="dlarc-skill-route" data-api-route="skill"></select><input type="text" data-api-preset-name="skill" aria-label="Skill 数据库预设名称" placeholder="输入数据库中的精确预设名称" hidden disabled></div></div></div><div class="dlarc-actions"><button data-action="save-config">保存 API 选择</button><button data-action="refresh-presets">检查数据库 API</button></div><div class="dlarc-note">spv8.8.2 不公开或验证预设列表。选择“指定数据库预设”时，请填写数据库设置中已有的精确名称；名称错误时数据库可能回退当前 API。</div></details><details class="dlarc-section"><summary>维护与诊断</summary><dl><dt>Skill 审计</dt><dd data-field="audit">尚未审计</dd><dt>官方 Agent</dt><dd data-field="official">—</dd></dl><div class="dlarc-actions"><button data-action="enable">启用</button><button data-action="resume">恢复伴侣模式</button><button data-action="disable" data-kind="danger">停用并恢复</button><button data-action="audit">审计 Skill</button><button data-action="upgrade">本地升级 Skill</button><button data-action="cancel">取消当前召回</button></div></details><div class="dlarc-note">当前仅运行单目录 + 短 ref 数组 + 场景缓存协议。普通条目最多 30 条 / 24,000 TK；当前章节最多三条，历史章节按需 0–2 条且单独计数。TavernDB 永不进入 Agent 世界书，只给分类器极短路由事实。</div></div>`;
+      panel.innerHTML = `<div class="dlarc-head"><button type="button" class="dlarc-toggle" data-action="toggle" aria-expanded="false"><strong>斗罗 Agent 伴侣</strong><span class="dlarc-pill" data-field="state">—</span></button><button type="button" class="dlarc-drag-handle" data-dlarc-drag-handle="1" aria-label="拖动伴侣面板" title="拖动面板">⠿</button></div><div class="dlarc-body"><section class="dlarc-section"><strong>运行状态</strong><dl><dt>数据库</dt><dd data-field="database">—</dd><dt>世界书</dt><dd data-field="books">—</dd><dt>时代 / 章节</dt><dd data-field="era">—</dd><dt>现场人物</dt><dd data-field="roster">—</dd><dt>可能介入</dt><dd data-field="entrants">—</dd><dt>跨时代桥接</dt><dd data-field="cross-era">—</dd><dt>七类关系</dt><dd data-field="relations">—</dd><dt>关系门槛</dt><dd data-field="evidence">—</dd><dt>蓝灯</dt><dd data-field="selection">—</dd><dt>蓝灯事务</dt><dd data-field="greenlight-guard">—</dd><dt>TK</dt><dd data-field="tk">—</dd><dt>召回阶段</dt><dd data-field="phase">—</dd><dt>分类健康</dt><dd data-field="classifier-health">—</dd><dt>剧情完成</dt><dd data-field="plot-completion">—</dd><dt>缓存前缀</dt><dd data-field="prompt-cache">—</dd><dt>最近诊断</dt><dd data-field="diagnostic">—</dd></dl></section><section class="dlarc-section"><strong>章节控制</strong><div class="dlarc-chapter-controls"><select data-manual-chapter-select aria-label="手动选择当前章节"></select><button type="button" data-action="apply-chapter">切换章节</button><button type="button" data-action="clear-chapter">恢复自动</button></div><div class="dlarc-note" data-field="manual-chapter">等待当前时代章节目录</div></section><details class="dlarc-section" open><summary>数据库 API</summary><div class="dlarc-presets"><div class="dlarc-api-route-row" data-api-route-row="catalog"><label for="dlarc-catalog-route">目录</label><div class="dlarc-api-route-controls"><select id="dlarc-catalog-route" data-api-route="catalog"></select><input type="text" data-api-preset-name="catalog" aria-label="目录数据库预设名称" placeholder="输入数据库中的精确预设名称" hidden disabled></div></div><div class="dlarc-api-route-row" data-api-route-row="classifier"><label for="dlarc-classifier-route">分类</label><div class="dlarc-api-route-controls"><select id="dlarc-classifier-route" data-api-route="classifier"></select><input type="text" data-api-preset-name="classifier" aria-label="分类数据库预设名称" placeholder="输入数据库中的精确预设名称" hidden disabled></div></div><div class="dlarc-api-route-row" data-api-route-row="skill"><label for="dlarc-skill-route">Skill</label><div class="dlarc-api-route-controls"><select id="dlarc-skill-route" data-api-route="skill"></select><input type="text" data-api-preset-name="skill" aria-label="Skill 数据库预设名称" placeholder="输入数据库中的精确预设名称" hidden disabled></div></div></div><div class="dlarc-actions"><button data-action="save-config">保存 API 选择</button><button data-action="refresh-presets">检查数据库 API</button></div><div class="dlarc-note">spv8.9.2 不公开或验证预设列表。选择“指定数据库预设”时，请填写数据库设置中已有的精确名称；名称错误时数据库可能回退当前 API。</div></details><details class="dlarc-section"><summary>维护与诊断</summary><dl><dt>Skill 审计</dt><dd data-field="audit">尚未审计</dd><dt>官方 Agent</dt><dd data-field="official">—</dd></dl><div class="dlarc-actions"><button data-action="enable">启用</button><button data-action="resume">恢复伴侣模式</button><button data-action="disable" data-kind="danger">停用并恢复</button><button data-action="audit">审计 Skill</button><button data-action="upgrade">本地升级 Skill</button><button data-action="cancel">取消当前召回</button></div></details><div class="dlarc-note">当前仅运行单目录 + 短 ref 数组 + 场景缓存协议。普通条目最多 30 条 / 24,000 TK；当前章节最多三条，历史章节按需 0–2 条且单独计数。TavernDB 永不进入 Agent 世界书，只给分类器极短路由事实。</div></div>`;
       const markApiConfigDirty = target => {
         if (!target || !target.matches || !target.matches("[data-api-route],[data-api-preset-name]")) return;
         panel.dataset.apiConfigDirty = "true";
@@ -5215,8 +5215,8 @@
           button.disabled = true;
           const availability = checkDatabaseApiAvailability();
           if (availability.available) {
-            record("info", "database_api_available", "spv8.8.2 的 callAI 与官方 Agent 控制接口可用；私有预设名称无法枚举或校验。", availability);
-            toast("数据库公开接口可用；spv8.8.2 不允许校验预设名称。", "success");
+            record("info", "database_api_available", "spv8.9.2 的 callAI 与官方 Agent 控制接口可用；私有预设名称无法枚举或校验。", availability);
+            toast("数据库公开接口可用；spv8.9.2 不允许校验预设名称。", "success");
           } else {
             const missing = [!availability.callAI && "callAI", !availability.agentControl && "getAgentWorldbookControl"].filter(Boolean).join("、");
             record("error", "database_api_missing", `数据库公开接口缺失：${missing}`, availability);
@@ -5381,7 +5381,7 @@
     const values = {
       state: state.paused ? "已暂停" : state.enabled ? "已启用" : "未启用",
       database: publicApi()
-        ? `spv8.8.2 API · 路由事实 ${state.databaseEvidence.selectedRowCount || 0} 条（扫描 ${state.databaseEvidence.tableCount || 0} 表/${state.databaseEvidence.rowCount || 0} 行）· 世界书排除 ${state.databaseOwnership.databaseEntryCount || 0} 条`
+        ? `spv8.9.2 API · 路由事实 ${state.databaseEvidence.selectedRowCount || 0} 条（扫描 ${state.databaseEvidence.tableCount || 0} 表/${state.databaseEvidence.rowCount || 0} 行）· 世界书排除 ${state.databaseOwnership.databaseEntryCount || 0} 条`
         : "官方 API 未就绪",
       books: state.bookNames.join("、") || state.writableBookName || "待读取",
       era: `${state.activeEra || "未知"}${chapter ? ` / 第 ${chapter} 章` : ""}${state.eraSource ? `（${state.eraSource}）` : ""}`,
